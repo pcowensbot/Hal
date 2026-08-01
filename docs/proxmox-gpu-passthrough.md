@@ -230,11 +230,16 @@ Notes:
 
 ```bash
 lspci -nn | grep -i nvidia     # the card, on the virtual PCIe bus
-sudo apt install -y ubuntu-drivers-common   # server images don't ship it
-sudo ubuntu-drivers autoinstall
+sudo apt update && sudo apt install -y ubuntu-drivers-common
+sudo ubuntu-drivers install    # 26.04 removed the old 'autoinstall' spelling
 sudo reboot
 nvidia-smi
 ```
+
+**`ubuntu-drivers` is not preinstalled on Ubuntu Server or cloud images** —
+only on Desktop. Without `ubuntu-drivers-common` you get `command not found`
+at exactly the step where a guide has told you the hard part is over.
+*(verified — the reference deployment hit this on a fresh 24.04 server image.)*
 
 `nvidia-smi` should print the card, its VRAM, temperature and a driver/CUDA
 banner. That's everything Ollama needs — **do not install the CUDA toolkit**

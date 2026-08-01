@@ -40,12 +40,24 @@ if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
     warn "but only the Tesla V100 has been verified. See docs/models.md (Older GPUs)."
   fi
 elif lspci 2>/dev/null | grep -qi nvidia; then
-  warn "NVIDIA hardware present but no driver. Installing (needs a reboot)..."
-  # Server/cloud images don't ship ubuntu-drivers-common
-  command -v ubuntu-drivers >/dev/null 2>&1 || sudo apt-get install -y -qq ubuntu-drivers-common
-  sudo ubuntu-drivers autoinstall
-  warn "Driver installed. REBOOT, then re-run this script — it picks up where it left off."
-  exit 0
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    # Driver installed but can't reach the card — do NOT loop back into
+    # driver install / reboot forever. Most likely cause on pre-Turing
+    # cards: a driver branch ≥590, which dropped Pascal/Volta.
+    warn "An NVIDIA driver is installed but nvidia-smi can't reach the card."
+    warn "On Pascal/Volta GPUs, pin the last supporting branch and reboot:"
+    warn "    sudo apt install nvidia-driver-580-server && sudo reboot"
+    warn "Continuing CPU-only — re-run this script once nvidia-smi works."
+  else
+    warn "NVIDIA hardware present but no driver. Installing (needs a reboot)..."
+    # Server/cloud images don't ship ubuntu-drivers-common
+    command -v ubuntu-drivers >/dev/null 2>&1 || sudo apt-get install -y -qq ubuntu-drivers-common
+    # 'autoinstall' was removed from ubuntu-drivers on Ubuntu 26.04; 'install'
+    # exists on 22.04/24.04/26.04 alike
+    sudo ubuntu-drivers install || sudo ubuntu-drivers autoinstall
+    warn "Driver installed. REBOOT, then re-run this script — it picks up where it left off."
+    exit 0
+  fi
 else
   warn "No NVIDIA GPU — HAL will run CPU-only (fine with small models)."
 fi

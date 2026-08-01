@@ -144,6 +144,10 @@ stopped shipping kernels for them.
 
 If you have one of these cards:
 
+- **Driver: stay on the 580 branch** — it's the last NVIDIA driver branch that
+  supports Pascal/Volta (≥590 dropped them). `ubuntu-drivers install` picks
+  correctly on Ubuntu 24.04/26.04 (verified — it only offers 580 for a V100),
+  but if you install manually, pin it: `sudo apt install nvidia-driver-580-server`.
 - You must **build Ollama from source** with the CUDA architecture flags for
   your card (e.g. compute capability 7.0 for V100) to run any release ≥ 0.30.
   Newer models (like `qwen3.6:27b`, which needs the ≥ 0.31 renderer) make this
