@@ -20,7 +20,7 @@ The rest of this page is the same procedure by hand — useful for non-Ubuntu di
 - **RAM** — 8 GB minimum, 32 GB+ recommended for multi-user
 - **Storage** — 50 GB SSD minimum (models + DB + uploads grow — 200 GB+ recommended)
 - **GPU** — NVIDIA, 8 GB VRAM minimum for a pleasant experience (see [models.md](models.md)); CPU-only works with small models
-- **OS** — Ubuntu 22.04, 24.04, or 26.04 LTS — all three validated end-to-end (any systemd Linux works, examples assume Ubuntu)
+- **OS** — Ubuntu 22.04, 24.04, or 26.04 LTS — all three validated end-to-end. Other distros are currently untested.
 - **Network** — a reachable IP; if exposing to the internet, plan for SSL termination (section 11)
 
 Running inside a Proxmox VM? Set up GPU passthrough first: [proxmox-gpu-passthrough.md](proxmox-gpu-passthrough.md).
@@ -48,7 +48,7 @@ nvidia-smi   # expect a table showing your GPU
 
 Ollama bundles its own CUDA runtime — no separate CUDA toolkit needed.
 
-> **Pre-Turing GPUs** (Pascal / Volta: GTX 10-series, Tesla P100/V100, Titan V, Quadro GV100): stock Ollama ≥0.30 dropped support for these cards — you'll need a source-built Ollama. The whole Volta (sm_70) family should work, but **only the Tesla V100 has been verified**. See the *Older GPUs* section of [models.md](models.md) before continuing.
+> **Pre-Turing GPUs** (Pascal / Volta: GTX 10-series, Tesla P100/V100, Titan V, Quadro GV100): stock Ollama ≥0.30 dropped support for these cards. **For Volta (sm_70) HAL includes a prebuilt binary** — the installer sets it up automatically (V100 fully vetted; other Volta cards should work, open an issue if not). Pascal still needs a source build. See *Older GPUs* in [models.md](models.md).
 
 ## 3. PostgreSQL
 

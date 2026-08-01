@@ -60,8 +60,8 @@ if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
     PRETURING=1
     warn "GPU compute capability $CAP is pre-Turing (Pascal/Volta) — the containerized stock"
     warn "Ollama can NOT use it; inference will run on CPU. For GPU inference on these cards"
-    warn "use the bare-metal installer with a source-built Ollama (docs/models.md, Older GPUs)."
-    warn "All Volta (sm_70) cards should work there — only the Tesla V100 has been verified."
+    warn "use the bare-metal installer — on Volta (sm_70) it auto-installs this project's"
+    warn "prebuilt Ollama (verified on Tesla V100; other Volta cards should work)."
   fi
   if ! $SUDO docker info 2>/dev/null | grep -qi nvidia; then
     log "Installing nvidia-container-toolkit..."
@@ -97,9 +97,11 @@ else
 fi
 
 # Pick a default model that fits the card (see docs/models.md)
-if   [ "$VRAM_MB" -ge 30000 ]; then MODEL="qwen3.6:27b"
-elif [ "$VRAM_MB" -ge 22000 ]; then MODEL="qwen3.6:27b"
-elif [ "$VRAM_MB" -ge 14000 ]; then MODEL="qwen2.5:14b-instruct-q4_K_M"
+# Thresholds sit just under each nominal card size (cards report slightly
+# under nominal), matching the chart in docs/models.md
+if   [ "$VRAM_MB" -ge 21000 ]; then MODEL="qwen3.6:27b"
+elif [ "$VRAM_MB" -ge 15000 ]; then MODEL="devstral:24b-small-2505-q4_K_M"
+elif [ "$VRAM_MB" -ge 11000 ]; then MODEL="qwen2.5:14b-instruct-q4_K_M"
 elif [ "$VRAM_MB" -ge 7000  ]; then MODEL="qwen3:8b"
 else                                MODEL="qwen3:4b"
 fi

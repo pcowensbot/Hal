@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/pcowensbot/Hal/main/install-baremetal.sh | bash
 #   (or ./install-baremetal.sh from a checkout)
 #
-# Target: Ubuntu 22.04 / 24.04 / 26.04, all validated (Debian-family). Installs and configures:
+# Target: Ubuntu 22.04 / 24.04 / 26.04 (all three validated). Installs and configures:
 #   PostgreSQL 16, Redis, Node 20, Ollama, PM2 — then builds and starts HAL.
 # Safe to re-run; each step skips work that's already done.
 set -euo pipefail
@@ -19,7 +19,7 @@ die()  { printf '\033[1;31m[hal-install]\033[0m %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] && die "Run as a regular user with sudo, not as root (PM2 runs as your user)."
 command -v sudo >/dev/null 2>&1 || die "sudo is required."
-command -v apt-get >/dev/null 2>&1 || die "This installer targets Ubuntu/Debian. For other distros, follow docs/install-baremetal.md manually."
+command -v apt-get >/dev/null 2>&1 || die "This installer targets Ubuntu (22.04/24.04/26.04 validated). For other distros, follow docs/install-baremetal.md manually."
 
 # --- 1. Base packages --------------------------------------------------------
 log "Installing base packages..."
@@ -36,8 +36,12 @@ if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
   if [ -n "$CAP" ] && awk "BEGIN{exit !($CAP < 7.5)}"; then
     PRETURING=1
     warn "GPU compute capability $CAP is pre-Turing — stock Ollama ≥0.30 will NOT use it."
-    warn "You need a source-built Ollama for this card — all Volta (sm_70) cards should work,"
-    warn "but only the Tesla V100 has been verified. See docs/models.md (Older GPUs)."
+    if [ "$CAP" = "7.0" ]; then
+      warn "Volta card detected — the installer will fetch this project's prebuilt sm_70"
+      warn "Ollama (verified on Tesla V100; other Volta cards should work — file an issue if not)."
+    else
+      warn "Pascal needs a source-built Ollama — see docs/models.md (Older GPUs)."
+    fi
   fi
 elif lspci 2>/dev/null | grep -qi nvidia; then
   if command -v nvidia-smi >/dev/null 2>&1; then
@@ -123,6 +127,40 @@ if ! command -v ollama >/dev/null 2>&1; then
 fi
 sudo systemctl enable --now ollama 2>/dev/null || true
 
+# Volta (sm_70) cards: overlay the project's prebuilt CUDA build — stock
+# Ollama ≥0.30 has no kernels for them. Verified on Tesla V100; other Volta
+# cards should work (open an issue if yours doesn't).
+VOLTA_URL="https://github.com/pcowensbot/Hal/releases/download/volta-ollama-0.32.4/ollama-0.32.4-volta-linux-amd64-sm70.tgz"
+if [ "${CAP:-}" = "7.0" ] && ! ollama --version 2>/dev/null | grep -qi volta; then
+  log "Volta GPU: installing the prebuilt sm_70 Ollama build..."
+  VOLTA_SRC="${HAL_VOLTA_TARBALL:-$VOLTA_URL}"
+  if [ -f "$VOLTA_SRC" ]; then
+    cp "$VOLTA_SRC" /tmp/ollama-volta.tgz
+  else
+    curl -fsSL -o /tmp/ollama-volta.tgz "$VOLTA_SRC" || true
+  fi
+  if [ -s /tmp/ollama-volta.tgz ]; then
+    sudo systemctl stop ollama
+    # Keep stock around so a bad overlay can be rolled back
+    sudo cp -a /usr/local/bin/ollama /usr/local/bin/ollama.stock 2>/dev/null || true
+    sudo rm -rf /usr/local/lib/ollama.stock 2>/dev/null || true
+    sudo cp -a /usr/local/lib/ollama /usr/local/lib/ollama.stock 2>/dev/null || true
+    sudo tar -C /usr/local -xzf /tmp/ollama-volta.tgz
+    rm -f /tmp/ollama-volta.tgz
+    if ldd /usr/local/lib/ollama/llama-server 2>/dev/null | grep -q "not found"; then
+      warn "Volta build won't run on this system (library mismatch) — restoring stock Ollama."
+      sudo cp -a /usr/local/bin/ollama.stock /usr/local/bin/ollama 2>/dev/null || true
+      sudo rm -rf /usr/local/lib/ollama && sudo cp -a /usr/local/lib/ollama.stock /usr/local/lib/ollama 2>/dev/null || true
+      warn "GPU inference unavailable — see docs/models.md (Older GPUs) and open an issue."
+    fi
+    sudo systemctl start ollama
+    log "Ollama now: $(ollama --version 2>/dev/null || echo unknown)"
+  else
+    warn "Couldn't fetch the Volta build — continuing with stock Ollama (CPU inference)."
+    warn "Get it later from the GitHub Releases page and re-run this script."
+  fi
+fi
+
 # Context length must be set on the Ollama service itself — its OpenAI-compat
 # /v1 endpoint ignores per-request num_ctx (see docs/models.md)
 sudo mkdir -p /etc/systemd/system/ollama.service.d
@@ -133,9 +171,11 @@ Environment="OLLAMA_KEEP_ALIVE=-1"
 EOF
 sudo systemctl daemon-reload && sudo systemctl restart ollama
 
-if   [ "$VRAM_MB" -ge 30000 ]; then MODEL="qwen3.6:27b"
-elif [ "$VRAM_MB" -ge 22000 ]; then MODEL="qwen3.6:27b"
-elif [ "$VRAM_MB" -ge 14000 ]; then MODEL="qwen2.5:14b-instruct-q4_K_M"
+# Thresholds sit just under each nominal card size (cards report slightly
+# under nominal), matching the chart in docs/models.md
+if   [ "$VRAM_MB" -ge 21000 ]; then MODEL="qwen3.6:27b"
+elif [ "$VRAM_MB" -ge 15000 ]; then MODEL="devstral:24b-small-2505-q4_K_M"
+elif [ "$VRAM_MB" -ge 11000 ]; then MODEL="qwen2.5:14b-instruct-q4_K_M"
 elif [ "$VRAM_MB" -ge 7000  ]; then MODEL="qwen3:8b"
 else                                MODEL="qwen3:4b"
 fi

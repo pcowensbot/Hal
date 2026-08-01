@@ -23,6 +23,34 @@ For smoke tests and CI canaries (is Ollama up? does the pipeline work end to end
 keep `qwen3:0.6b` around — 522 MB-class tiny model, loads in a blink, useless for
 real chat but perfect for "is this thing on?" checks.
 
+## Adding models — pulling them down for HAL to pick up
+
+The installer pulls exactly one model. Everything else is one command away —
+HAL automatically lists **every model Ollama has on disk**, so pulling a model
+*is* installing it:
+
+**Bare-metal install:**
+
+```bash
+ollama pull qwen3:8b            # or any tag from ollama.com/library
+ollama list                     # confirm it landed
+```
+
+**Docker install** (run from your HAL directory):
+
+```bash
+docker compose exec ollama ollama pull qwen3:8b
+docker compose exec ollama ollama list
+```
+
+The new model shows up in HAL's model picker immediately — no restart needed.
+To make it the default for everyone: **Dashboard → Models** (admin), or leave
+the default alone and switch per-conversation in the chat UI. To free the disk
+space back: `ollama rm <model>` (same `docker compose exec` wrapper on Docker).
+
+Browse what's available at [ollama.com/library](https://ollama.com/library) —
+anything there works, subject to your VRAM (chart above).
+
 ## What matters for HAL specifically
 
 Four things separate a good HAL model from a frustrating one:
@@ -152,20 +180,38 @@ If you have one of these cards:
   inference. The HAL installer works around this by installing the newest
   branch that claims the card; if installing manually, pin it:
   `sudo apt install nvidia-driver-580-server`.
-- You must **build Ollama from source** with the CUDA architecture flags for
-  your card (e.g. compute capability 7.0 for V100) to run any release ≥ 0.30.
-  Newer models (like `qwen3.6:27b`, which needs the ≥ 0.31 renderer) make this
-  worth doing.
-- **Never upgrade via the ollama.com installer.** It will silently replace your
-  custom build with a stock binary, and GPU inference breaks with no obvious
-  error — inference just quietly falls back to CPU or fails to load. Upgrades
-  mean rebuilding from source.
-- Keep a backup of your known-good binary and library payload before any upgrade
-  so you can roll back.
 
-Community **"Volta builds"** — prebuilt Ollama binaries for Volta-class cards —
-are planned/available; check the project's discussions for links. Any Volta
-(sm_70) card should work with these builds, but **only the Tesla V100 has
-actually been verified** — reports from Titan V / Quadro GV100 owners are
-welcome either way. A 32 GB V100 remains a genuinely great HAL card: it runs
+### Volta (sm_70): we include the binary
+
+**HAL ships a prebuilt Volta Ollama** on the
+[Releases page](https://github.com/pcowensbot/Hal/releases) — CUDA kernels for
+compute capability 7.0, currently `ollama-0.32.4-volta`. The bare-metal
+installer detects a Volta card and installs it automatically. Manual install:
+
+```bash
+sudo systemctl stop ollama
+sudo tar -C /usr/local -xzf ollama-0.32.4-volta-linux-amd64-sm70.tgz
+sudo systemctl start ollama
+ollama --version   # → 0.32.4-volta
+```
+
+The **Tesla V100 is fully vetted** — it's what the reference deployment runs in
+production, daily. The rest of the family (Titan V, Quadro GV100, all V100
+variants) should work identically; if yours doesn't, **open an issue** and
+we'll work through it. The tarball is built on Ubuntu 22.04 for glibc
+portability and runs on 22.04/24.04/26.04. A 32 GB V100 remains a genuinely great HAL card: it runs
 `qwen3.6:27b` at 64K context with room to spare.
+
+**Pascal (sm_60)** has no prebuilt binary yet — you must **build Ollama from
+source** with the CUDA architecture flags for your card. If there's demand,
+sm_60 builds may follow — open an issue and say so.
+
+Care and feeding of a custom build:
+
+- **Never upgrade via the ollama.com installer.** It will silently replace the
+  Volta build with a stock binary, and GPU inference breaks with no obvious
+  error — inference just quietly falls back to CPU or fails to load. Upgrades
+  mean installing the next Volta build from Releases (or rebuilding from source).
+- Keep a backup of your known-good binary and library payload
+  (`/usr/local/bin/ollama`, `/usr/local/lib/ollama`) before any change so you
+  can roll back.
