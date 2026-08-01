@@ -48,7 +48,7 @@ nvidia-smi   # expect a table showing your GPU
 
 Ollama bundles its own CUDA runtime — no separate CUDA toolkit needed.
 
-> **Pre-Turing GPUs** (GTX 10-series, Tesla P100/V100): stock Ollama ≥0.30 dropped support for these cards. See the *Older GPUs* section of [models.md](models.md) before continuing.
+> **Pre-Turing GPUs** (Pascal / Volta: GTX 10-series, Tesla P100/V100, Titan V, Quadro GV100): stock Ollama ≥0.30 dropped support for these cards — you'll need a source-built Ollama. The whole Volta (sm_70) family should work, but **only the Tesla V100 has been verified**. See the *Older GPUs* section of [models.md](models.md) before continuing.
 
 ## 3. PostgreSQL
 

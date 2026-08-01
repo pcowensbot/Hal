@@ -37,6 +37,8 @@ Full walkthroughs (including doing every step by hand): [docs/install-docker.md]
 
 Which model fits your card → [docs/models.md](docs/models.md). Running HAL in a Proxmox VM → [docs/proxmox-gpu-passthrough.md](docs/proxmox-gpu-passthrough.md).
 
+> **Older (pre-Turing) GPUs:** Pascal and Volta cards — GTX 10-series, Tesla P100/V100, Titan V, Quadro GV100 — need a source-built Ollama because stock releases ≥0.30 dropped them. The whole Volta (sm_70) family should work; **only the Tesla V100 has been verified** (it's what the reference deployment runs). See *Older GPUs* in [docs/models.md](docs/models.md).
+
 ---
 
 ## Features

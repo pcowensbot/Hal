@@ -104,4 +104,4 @@ For internet exposure, put nginx/Caddy/Traefik in front of port 3000 and termina
 | Ollama runs on CPU despite a GPU | `docker compose exec ollama nvidia-smi` — if that fails, nvidia-container-toolkit isn't wired: `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker`, and make sure the GPU override file is included |
 | Chat says model not found | Model not pulled: `docker compose exec ollama ollama pull <model>`, and check the default in Dashboard → Models |
 | Slow first response after idle | Model was evicted — the stack ships `OLLAMA_KEEP_ALIVE=-1` (resident), but only after first load |
-| Pre-Turing GPU (GTX 10-series / P100 / V100) not used | Stock Ollama ≥0.30 dropped these cards — see *Older GPUs* in [models.md](models.md); you'll need a source-built Ollama on the host (bare-metal path) |
+| Pre-Turing GPU (Pascal / Volta: GTX 10-series, P100, V100, Titan V, GV100) not used | Stock Ollama ≥0.30 dropped these cards — see *Older GPUs* in [models.md](models.md); you'll need a source-built Ollama on the host (bare-metal path). Any Volta (sm_70) card should work; only the Tesla V100 has been verified |
