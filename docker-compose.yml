@@ -1,0 +1,92 @@
+# HAL — full single-server stack: app + PostgreSQL + Redis + Ollama.
+#
+# Quick start (or just run ./install.sh, which does all of this for you):
+#   cp .env.docker.example .env       # then edit: set JWT_SECRET + POSTGRES_PASSWORD
+#   docker compose up -d --build
+#   docker compose exec ollama ollama pull qwen3:8b     # or your model, see docs/models.md
+#   docker compose logs hal | grep -A4 'FIRST-RUN'      # grab the bootstrap invite code
+#
+# NVIDIA GPU: also pass the GPU override file —
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# (install.sh sets COMPOSE_FILE in .env so plain `docker compose` includes it)
+
+services:
+  hal:
+    build:
+      context: .
+      args:
+        WITH_DOCLING: "${WITH_DOCLING:-0}"
+    image: hal:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: "postgresql://hal:${POSTGRES_PASSWORD}@postgres:5432/hal?connection_limit=10&pool_timeout=20"
+      REDIS_URL: "redis://redis:6379"
+      LLM_PROVIDER: ollama
+      LLM_BASE_URL: "http://ollama:11434"
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      LLM_DEFAULT_MODEL: "${HAL_MODEL:-qwen3:8b}"
+      LLM_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-32768}"
+      JWT_SECRET: "${JWT_SECRET}"
+      JWT_EXPIRES_IN: "24h"
+      CORS_ORIGINS: "${CORS_ORIGINS:-}"
+      PUBLIC_URL: "${PUBLIC_URL:-}"
+    ports:
+      - "${HAL_PORT:-3000}:3000"
+    volumes:
+      - hal-uploads:/app/public/uploads
+      - hal-generated:/app/public/generated-images
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hal
+      POSTGRES_USER: hal
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - hal-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hal -d hal"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - hal-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      # Ollama's OpenAI-compatible /v1 endpoint ignores per-request num_ctx,
+      # so context length must be set server-wide here (see docs/models.md)
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-32768}"
+      # Keep the model resident instead of unloading after 5 idle minutes
+      OLLAMA_KEEP_ALIVE: "-1"
+    volumes:
+      - hal-ollama:/root/.ollama
+
+volumes:
+  hal-pgdata:
+  hal-redis:
+  hal-ollama:
+  hal-uploads:
+  hal-generated:

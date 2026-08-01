@@ -1,0 +1,159 @@
+.markdown {
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  word-wrap: break-word;
+  color: var(--text);
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: var(--spacing-md) 0 var(--spacing-xs) 0;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.markdown h1 { font-size: 1.25em; }
+.markdown h2 { font-size: 1.15em; }
+.markdown h3 { font-size: 1.05em; }
+.markdown h4 { font-size: 1em; }
+
+.markdown p {
+  margin: 0;
+}
+
+.markdown p + p {
+  margin-top: var(--spacing-sm);
+}
+
+.markdown ul,
+.markdown ol {
+  margin: var(--spacing-xs) 0;
+  padding-left: 1.5rem;
+}
+
+.markdown li {
+  margin: 0.25rem 0;
+}
+
+.markdown hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--spacing-sm) 0;
+}
+
+.markdown strong {
+  font-weight: 600;
+}
+
+.markdown a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.markdown a:hover {
+  opacity: 0.8;
+}
+
+.markdown code:not(pre code) {
+  background: var(--surface-hover);
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+/* Code blocks */
+.codeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  margin-top: var(--spacing-sm);
+}
+
+.codeLang {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.codeLangSuffix {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.copyButton {
+  font-size: var(--text-xs);
+  padding: 0.125rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.copyButton:hover {
+  color: var(--text);
+}
+
+.markdown pre {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  padding: var(--spacing-md);
+  margin: 0 0 var(--spacing-sm) 0;
+  overflow-x: auto;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.markdown pre code {
+  font-family: var(--font-mono);
+}
+
+/* Tables (GFM) */
+.markdown table {
+  border-collapse: collapse;
+  margin: var(--spacing-sm) 0;
+  font-size: 0.95em;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.markdown thead {
+  background: var(--surface);
+}
+
+.markdown th,
+.markdown td {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown th {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.markdown tbody tr:nth-child(even) {
+  background: var(--surface-hover);
+}
+
+/* Blockquotes (some imported chats use them) */
+.markdown blockquote {
+  margin: var(--spacing-sm) 0;
+  padding: 0 var(--spacing-md);
+  border-left: 3px solid var(--border);
+  color: var(--text-secondary);
+}

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HAL - Maintenance Mode</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .maintenance-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+            text-align: center;
+            background: linear-gradient(135deg, var(--background) 0%, var(--surface) 100%);
+        }
+
+        .maintenance-card {
+            background: var(--surface);
+            border: 2px solid var(--border);
+            border-radius: 16px;
+            padding: 48px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .maintenance-icon {
+            font-size: 120px;
+            margin-bottom: 24px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.05);
+                opacity: 0.8;
+            }
+        }
+
+        .maintenance-title {
+            font-size: 32px;
+            font-weight: bold;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+        }
+
+        .maintenance-message {
+            font-size: 18px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 32px;
+        }
+
+        .eta-container {
+            background: linear-gradient(135deg, #8b5cf6, #6366f1);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 32px;
+        }
+
+        .eta-label {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.9);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .eta-time {
+            font-size: 36px;
+            font-weight: bold;
+            color: white;
+            font-family: 'Courier New', monospace;
+        }
+
+        .eta-date {
+            font-size: 16px;
+            color: rgba(255, 255, 255, 0.8);
+            margin-top: 8px;
+        }
+
+        .maintenance-footer {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .refresh-btn {
+            margin-top: 24px;
+            padding: 12px 32px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .refresh-btn:hover {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="maintenance-container">
+        <div class="maintenance-card">
+            <div class="maintenance-icon">🧠</div>
+            <h1 class="maintenance-title">System in Maintenance</h1>
+            <p class="maintenance-message" id="maintenanceMessage">
+                The system is currently down for AI training maintenance.
+            </p>
+            <div class="eta-container">
+                <div class="eta-label">Available Again At</div>
+                <div class="eta-time" id="etaTime">--:--</div>
+                <div class="eta-date" id="etaDate">Loading...</div>
+            </div>
+            <div class="maintenance-footer">
+                The system will automatically refresh when maintenance is complete.
+            </div>
+            <button class="refresh-btn" onclick="checkStatus()">
+                <span id="btnText">Check Now</span>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let checkInterval;
+
+        async function checkStatus() {
+            const btn = document.getElementById('btnText');
+            btn.innerHTML = '<span class="loading-spinner"></span>';
+
+            try {
+                const response = await fetch('/api/admin/maintenance/status');
+                const data = await response.json();
+
+                if (!data.inMaintenance) {
+                    // Maintenance is over, redirect to chat
+                    window.location.href = '/chat.html';
+                } else {
+                    // Update display
+                    updateDisplay(data);
+                }
+            } catch (error) {
+                console.error('Failed to check maintenance status:', error);
+            } finally {
+                btn.textContent = 'Check Now';
+            }
+        }
+
+        function updateDisplay(data) {
+            // Update message
+            if (data.message) {
+                document.getElementById('maintenanceMessage').textContent = data.message;
+            }
+
+            // Update ETA
+            if (data.nextAvailable) {
+                const eta = new Date(data.nextAvailable);
+                const now = new Date();
+                const diffMs = eta - now;
+                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+                // Format time
+                const hours = eta.getHours().toString().padStart(2, '0');
+                const minutes = eta.getMinutes().toString().padStart(2, '0');
+                document.getElementById('etaTime').textContent = `${hours}:${minutes}`;
+
+                // Format date
+                const options = { weekday: 'long', month: 'long', day: 'numeric' };
+                const dateStr = eta.toLocaleDateString('en-US', options);
+                const timeUntil = diffHours > 0
+                    ? `in ${diffHours}h ${diffMins}m`
+                    : `in ${diffMins} minutes`;
+                document.getElementById('etaDate').textContent = `${dateStr} (${timeUntil})`;
+            }
+        }
+
+        // Initial check
+        checkStatus();
+
+        // Auto-check every minute
+        checkInterval = setInterval(checkStatus, 60000);
+
+        // Cleanup
+        window.addEventListener('beforeunload', () => {
+            if (checkInterval) clearInterval(checkInterval);
+        });
+    </script>
+</body>
+</html>

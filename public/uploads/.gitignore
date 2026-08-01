@@ -1,0 +1,3 @@
+# Uploaded files are not tracked by git
+*
+!.gitignore

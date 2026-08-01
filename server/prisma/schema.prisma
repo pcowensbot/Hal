@@ -1,0 +1,338 @@
+// Prisma schema for HAL - Home AI Box
+// Single household, parents + kids, conversation tracking
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String         @id @default(uuid())
+  email          String         @unique
+  passwordHash   String
+  firstName      String
+  role           Role           @default(CHILD)
+  avatar         String?        @db.Text // Base64 encoded image or URL
+  isActive       Boolean        @default(true) // Can be disabled by parents
+  isSystemAdmin  Boolean        @default(false) // Full system access
+  roleId         String?
+  customRole     CustomRole?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  createdAt      DateTime       @default(now())
+  // API Rate Limiting
+  apiLimitDaily    Int?         // Max API calls per day (null = unlimited)
+  apiLimitMonthly  Int?         // Max API calls per month (null = unlimited)
+  apiCallsToday    Int          @default(0)
+  apiCallsMonth    Int          @default(0)
+  apiLimitResetDay DateTime?    // When daily count was last reset
+  apiLimitResetMonth DateTime?  // When monthly count was last reset
+  // Relations
+  conversations  Conversation[]
+  books          Book[]
+  starredNotes   StarredNote[]
+  devices        Device[]
+  groupMemberships GroupMember[]
+  createdInvites InviteCode[]   @relation("CreatedInvites")
+  usedInvites    InviteCode[]   @relation("UsedInvites")
+  createdGroups  Group[]
+  sharedConversations ConversationShare[]
+  sharedApiLogs SharedApiLog[]
+  chatFolders    ChatFolder[]
+
+  @@map("users")
+}
+
+enum Role {
+  SUPER_ADMIN // First account created
+  PARENT      // Additional parent accounts
+  CHILD       // Child accounts
+  MEMBER      // Generic member (for new role system)
+}
+
+model Conversation {
+  id              String      @id @default(uuid())
+  userId          String
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String      @default("New Chat")
+  starred         Boolean     @default(false) // Star to keep at top
+  source          String?     // null = native, "claude" or "chatgpt" = imported
+  folderId        String?     // Chat folder (nullable = unfiled)
+  folder          ChatFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?   // Soft delete timestamp
+  deletedBy       String?     // User ID who deleted it
+  permanentDelete Boolean     @default(false) // Flag for final deletion
+  messages        Message[]
+  shares          ConversationShare[]
+  sessionMeta     SessionMeta?
+
+  @@index([userId])
+  @@index([deletedAt])
+  @@index([starred])
+  @@index([folderId])
+  @@map("conversations")
+}
+
+model ChatFolder {
+  id            String       @id @default(uuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  parentId      String?      // null = top-level, set = subfolder (max 2 levels)
+  parent        ChatFolder?  @relation("FolderNesting", fields: [parentId], references: [id], onDelete: Cascade)
+  children      ChatFolder[] @relation("FolderNesting")
+  position      Int          @default(0) // Sort order
+  isCollapsed   Boolean      @default(false) // Remember collapse state
+  createdAt     DateTime     @default(now())
+  conversations Conversation[]
+
+  @@index([userId])
+  @@index([parentId])
+  @@map("chat_folders")
+}
+
+model Message {
+  id             String        @id @default(uuid())
+  conversationId String
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String        // "user" or "assistant"
+  content        String        @db.Text
+  imageUrl       String?       // For generated images
+  attachments    Json?         // Array of {type: 'image', filename: string, originalUrl: string, size: number}
+  modelUsed      String        @default("llama3.1:8b")
+  createdAt      DateTime      @default(now())
+  starredNotes   StarredNote[]
+
+  @@index([conversationId])
+  @@map("messages")
+}
+
+model Settings {
+  id                    Int      @id @default(1)
+  householdName         String   @default("HAL")
+  imageGenEnabled       Boolean  @default(false)
+  defaultModel          String   @default("llama3.1:8b")
+  maintenanceEnabled    Boolean  @default(false)
+  maintenanceStartHour  Int      @default(2) // 2 AM
+  maintenanceEndHour    Int      @default(6) // 6 AM
+  maintenanceGPUs       String   @default("both") // "gpu0", "gpu1", "both"
+  maintenanceMessage    String?  @db.Text // Custom message for users
+  // GPU Assignment for services
+  chatGPU               String?  // "gpu0", "gpu1", null for auto
+  imageGenGPU           String?  // "gpu0", "gpu1", null for disabled/auto
+  knowledgeBaseGPU      String?  // "gpu0", "gpu1", null for auto
+  knowledgeBaseEnabled  Boolean  @default(true) // Enable/disable KB assistant
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model InviteCode {
+  id              String      @id @default(uuid())
+  code            String      @unique
+  createdById     String?
+  createdBy       User?       @relation("CreatedInvites", fields: [createdById], references: [id], onDelete: SetNull)
+  legacyCreatedBy String?     // Legacy field for old data
+  createdAt       DateTime    @default(now())
+  expiresAt       DateTime?   // Optional expiration
+  usedAt          DateTime?   // When it was used
+  usedById        String?
+  usedBy          User?       @relation("UsedInvites", fields: [usedById], references: [id], onDelete: SetNull)
+  isActive        Boolean     @default(true)
+  emailedTo       String?     // Email address it was sent to
+  emailedAt       DateTime?   // When it was emailed
+  roleId          String?
+  assignedRole    CustomRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  groupId         String?
+  assignedGroup   Group?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  makeGroupAdmin  Boolean     @default(false)
+
+  @@index([code])
+  @@index([createdById])
+  @@map("invite_codes")
+}
+
+model CustomRole {
+  id               String       @id @default(uuid())
+  name             String       @unique
+  description      String?
+  color            String?
+  canManageUsers   Boolean      @default(false)
+  canManageGroups  Boolean      @default(false)
+  canManageRoles   Boolean      @default(false)
+  canViewAllConvos Boolean      @default(false)
+  canManageSystem  Boolean      @default(false)
+  canCreateInvites Boolean      @default(false)
+  canDeleteConvos  Boolean      @default(false)
+  isSystem         Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  users            User[]
+  inviteCodes      InviteCode[]
+
+  @@map("custom_roles")
+}
+
+model Group {
+  id          String              @id @default(uuid())
+  name        String
+  description String?
+  color       String?
+  createdBy   String
+  creator     User                @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  members     GroupMember[]
+  inviteCodes InviteCode[]
+  sharedConversations ConversationShare[]
+
+  @@map("groups")
+}
+
+model GroupMember {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId      String
+  group        Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  isGroupAdmin Boolean  @default(false)
+  canViewAll   Boolean  @default(false)
+  joinedAt     DateTime @default(now())
+
+  @@unique([userId, groupId])
+  @@map("group_members")
+}
+
+model ConversationShare {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  groupId        String
+  group          Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sharedBy       String
+  sharedByUser   User         @relation(fields: [sharedBy], references: [id], onDelete: Cascade)
+  sharedAt       DateTime     @default(now())
+
+  @@unique([conversationId, groupId])
+  @@map("conversation_shares")
+}
+
+model SessionMeta {
+  id              String   @id @default(uuid())
+  conversationId  String   @unique
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  externalId      String?  @unique
+  workingDir      String?
+  filesModified   Json     @default("[]")
+  filesCreated    Json     @default("[]")
+  filesDeleted    Json     @default("[]")
+  commandsRun     Json     @default("[]")
+  toolCalls       Json     @default("[]")
+  tokenCount      Int?
+  modelUsed       String?
+  duration        Int?
+  tags            Json     @default("[]")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([externalId])
+  @@map("session_meta")
+}
+
+model Book {
+  id                String         @id @default(uuid())
+  userId            String
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name              String
+  description       String?
+  isPublic          Boolean        @default(false) // Allow export/sharing
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  notes             StarredNote[]
+
+  @@index([userId])
+  @@map("books")
+}
+
+model StarredNote {
+  id                String    @id @default(uuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messageId         String?
+  message           Message?  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  title             String?   // User's custom title/caption
+  note              String?   @db.Text // User's notes about this starred item
+  bookId            String?
+  book              Book?     @relation(fields: [bookId], references: [id], onDelete: SetNull)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([messageId])
+  @@index([bookId])
+  @@map("starred_notes")
+}
+
+model Device {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  apiKeyHash  String    @unique // SHA-256 hash of the API key
+  lastUsedAt  DateTime?
+  requestCount Int      @default(0) // Track usage
+  logPromptContent Boolean @default(false) // Opt-in: persist full prompts/responses to audit log
+  defaults    Json?     // Per-device request defaults merged under /v1 chat completions (e.g. {think:false, temperature:0.3, seed:42}). Request-level params win.
+  pinnedModel String?   // Hard pin: this device always gets this model regardless of requested or dashboard-default. For consumers who want to test model upgrades explicitly.
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  apiLogs     DeviceApiLog[]
+  sharedApiLogs SharedApiLog[]
+
+  @@index([userId])
+  @@index([apiKeyHash])
+  @@map("devices")
+}
+
+model DeviceApiLog {
+  id          String    @id @default(uuid())
+  deviceId    String
+  device      Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  endpoint    String    // e.g., "/chat", "/generate", "/models"
+  method      String    // e.g., "POST", "GET"
+  model       String?   // LLM model used (if applicable)
+  prompt      String?   // The input message/prompt (truncated if too long)
+  response    String?   // The response (truncated if too long)
+  status      Int       // HTTP status code
+  durationMs  Int?      // How long the request took
+  tokenCount  Int?      // Number of tokens used (if available)
+  error       String?   // Error message if failed
+  metadata    Json?     // Additional metadata (like context length, etc.)
+  createdAt   DateTime  @default(now())
+
+  @@index([deviceId])
+  @@index([createdAt])
+  @@index([deviceId, createdAt])
+  @@map("device_api_logs")
+}
+
+model SharedApiLog {
+  id        String    @id @default(uuid())
+  slug      String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId  String
+  device    Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  logIds    Json      // Array of DeviceApiLog IDs
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  @@index([slug])
+  @@map("shared_api_logs")
+}

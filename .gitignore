@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Python virtualenvs (e.g. Docling at .venv/docling)
+.venv/
+venv/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Build output
+client/dist/
+
+# Backup files
+*.bak
+*.dump
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Database
+*.db
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Prisma
+prisma/.env
+
+# User content
+public/generated-images/*.png
+public/generated-images/*.jpg
+public/generated-images/*.jpeg
+public/uploads/*
+!public/uploads/.gitignore

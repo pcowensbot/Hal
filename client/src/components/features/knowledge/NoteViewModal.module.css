@@ -1,0 +1,238 @@
+.container {
+  display: flex;
+  min-height: 400px;
+  max-height: 70vh;
+  position: relative;
+}
+
+/* Main content */
+.mainContent {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header — title + meta + edit pencil */
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  flex-shrink: 0;
+}
+
+.headerLeft {
+  min-width: 0;
+}
+
+.title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 var(--spacing-xs) 0;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.date {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.metaBadge {
+  font-size: var(--text-xs);
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-full);
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.editButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.editButton:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+/* Message content */
+.messageContent {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-md);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.emptyMessage {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+/* Notes panel — slides in from the right */
+.notesPanel {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  width: 36px; /* Just the tab handle */
+  transition: width var(--transition-base);
+  overflow: hidden;
+}
+
+.notesPanel.expanded {
+  width: 300px;
+}
+
+/* Tab handle — always visible */
+.notesTab {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 36px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: var(--spacing-md);
+  gap: var(--spacing-xs);
+  border: none;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+  z-index: 1;
+}
+
+.notesTab:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.notesTabIcon {
+  font-size: 1rem;
+}
+
+.notesTabDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+/* Expanded notes content */
+.notesContent {
+  display: flex;
+  flex-direction: column;
+  margin-left: 36px;
+  width: calc(300px - 36px);
+  padding: var(--spacing-md);
+  padding-left: var(--spacing-sm);
+  opacity: 0;
+  transition: opacity var(--transition-base);
+  overflow: hidden;
+}
+
+.notesPanel.expanded .notesContent {
+  opacity: 1;
+}
+
+.notesHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-sm);
+  flex-shrink: 0;
+  gap: var(--spacing-sm);
+}
+
+.notesTitle {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.notesTextarea {
+  flex: 1;
+  width: 100%;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  line-height: 1.6;
+  resize: none;
+  transition: border-color var(--transition-fast);
+}
+
+.notesTextarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.notesTextarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .container {
+    flex-direction: column;
+  }
+
+  .notesPanel {
+    width: 100%;
+    height: auto;
+    flex-direction: column;
+  }
+
+  .notesPanel.expanded {
+    width: 100%;
+  }
+
+  .notesTab {
+    position: relative;
+    width: 100%;
+    height: 36px;
+    flex-direction: row;
+    justify-content: center;
+    padding-top: 0;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .notesContent {
+    margin-left: 0;
+    width: 100%;
+    min-height: 150px;
+  }
+}
