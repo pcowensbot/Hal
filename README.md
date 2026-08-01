@@ -30,7 +30,7 @@ Full walkthroughs (including doing every step by hand): [docs/install-docker.md]
 
 | | Minimum | Comfortable |
 |---|---|---|
-| OS | Ubuntu 22.04/24.04 (any systemd Linux works) | — |
+| OS | Ubuntu 22.04 / 24.04 / 26.04 — all three validated end-to-end (any systemd Linux works) | — |
 | CPU / RAM | 4 cores / 8 GB | 8+ cores / 32 GB |
 | Disk | 50 GB SSD | 200 GB+ |
 | GPU | none (CPU works with small models) | NVIDIA 8–32 GB VRAM |

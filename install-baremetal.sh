@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/pcowensbot/Hal/main/install-baremetal.sh | bash
 #   (or ./install-baremetal.sh from a checkout)
 #
-# Target: Ubuntu 22.04 / 24.04 (Debian-family). Installs and configures:
+# Target: Ubuntu 22.04 / 24.04 / 26.04, all validated (Debian-family). Installs and configures:
 #   PostgreSQL 16, Redis, Node 20, Ollama, PM2 — then builds and starts HAL.
 # Safe to re-run; each step skips work that's already done.
 set -euo pipefail

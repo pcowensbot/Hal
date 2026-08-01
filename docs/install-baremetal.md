@@ -20,7 +20,7 @@ The rest of this page is the same procedure by hand — useful for non-Ubuntu di
 - **RAM** — 8 GB minimum, 32 GB+ recommended for multi-user
 - **Storage** — 50 GB SSD minimum (models + DB + uploads grow — 200 GB+ recommended)
 - **GPU** — NVIDIA, 8 GB VRAM minimum for a pleasant experience (see [models.md](models.md)); CPU-only works with small models
-- **OS** — Ubuntu 22.04 or 24.04 LTS (any systemd Linux works, examples assume Ubuntu)
+- **OS** — Ubuntu 22.04, 24.04, or 26.04 LTS — all three validated end-to-end (any systemd Linux works, examples assume Ubuntu)
 - **Network** — a reachable IP; if exposing to the internet, plan for SSL termination (section 11)
 
 Running inside a Proxmox VM? Set up GPU passthrough first: [proxmox-gpu-passthrough.md](proxmox-gpu-passthrough.md).
