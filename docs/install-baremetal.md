@@ -39,6 +39,7 @@ Run everything as the regular Linux user who will own the HAL process (not root 
 ## 2. NVIDIA driver (skip if CPU-only)
 
 ```bash
+sudo apt install -y ubuntu-drivers-common   # server images don't ship it
 sudo ubuntu-drivers autoinstall
 sudo reboot
 # after reboot:
