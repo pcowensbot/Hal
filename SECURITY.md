@@ -6,7 +6,7 @@
 vulnerability.** HAL instances hold people's chat history, credentials, and
 API keys — a public report puts every deployment at risk before a fix exists.
 
-Report privately to: **<LICENSING-CONTACT-EMAIL>**
+Report privately to: **fphillips@pcowens.com**
 
 Include what you'd include in a good bug report (HAL version, install path,
 reproduction steps) plus your assessment of impact. You'll get an

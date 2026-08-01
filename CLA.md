@@ -20,7 +20,7 @@ contributions you submit to HAL.
 ## 1. Definitions
 
 - **"You"** — the individual accepting this agreement.
-- **"The Project"** — the HAL project and **<PROJECT-OWNER-LEGAL-NAME>**, its
+- **"The Project"** — the HAL project and **Frazier Oneal Phillips III**, its
   maintainer, together with any successor in ownership of the project.
 - **"Contribution"** — any original work of authorship, including any
   modification of or addition to an existing work, that You intentionally
@@ -89,7 +89,7 @@ non-infringement.
 
 ## 6. Governing law
 
-This agreement is governed by the laws of **<JURISDICTION>**, without regard to
+This agreement is governed by the laws of **the State of California, United States** (venue: Inyo County, California), without regard to
 its conflict-of-law provisions.
 
 ## Signing
@@ -102,7 +102,6 @@ contributions are covered automatically.
 
 ### Before you use this
 
-Placeholders to fill: **`<PROJECT-OWNER-LEGAL-NAME>`**, **`<JURISDICTION>`**.
 
 This draft follows the structure of the widely-used Apache Individual CLA, with
 section 2 extended to grant the relicensing and sublicensing rights that Apache's

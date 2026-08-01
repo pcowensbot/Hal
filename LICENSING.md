@@ -52,7 +52,7 @@ You probably need one if:
 
 Terms are negotiated per case; the price for a small company running HAL
 internally is not the price for a platform reselling it. Enquiries:
-**<LICENSING-CONTACT-EMAIL>**.
+**fphillips@pcowens.com**.
 
 ## Where the money goes
 
@@ -88,7 +88,6 @@ standard — see `CONTRIBUTING.md`.
 
 ### Before you publish this
 
-Placeholders to fill: **`<LICENSING-CONTACT-EMAIL>`**.
 
 This document, `CONTRIBUTING.md` and `CLA.md` were drafted by an assistant, not
 a lawyer. The dual-licence structure described here is a well-established
