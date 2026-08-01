@@ -52,9 +52,24 @@ elif lspci 2>/dev/null | grep -qi nvidia; then
     warn "NVIDIA hardware present but no driver. Installing (needs a reboot)..."
     # Server/cloud images don't ship ubuntu-drivers-common
     command -v ubuntu-drivers >/dev/null 2>&1 || sudo apt-get install -y -qq ubuntu-drivers-common
-    # 'autoinstall' was removed from ubuntu-drivers on Ubuntu 26.04; 'install'
-    # exists on 22.04/24.04/26.04 alike
-    sudo ubuntu-drivers install || sudo ubuntu-drivers autoinstall
+    if lspci 2>/dev/null | grep -qiE 'NVIDIA.*G[VP]1[0-9]{2}'; then
+      # Pre-Turing silicon (Pascal GP1xx / Volta GV1xx): the distro's
+      # "recommended" pick can be badly wrong — 22.04 recommends the legacy
+      # 390 branch for a V100. Newer branches don't claim old silicon at all,
+      # so the newest branch that lists this card is the right one.
+      DRV=$(sudo ubuntu-drivers devices 2>/dev/null \
+            | grep -oE 'nvidia-driver-[0-9]+(-server)?' | sort -t- -k3,3n | tail -1)
+      if [ -n "$DRV" ]; then
+        warn "Pre-Turing GPU: installing newest branch that supports it: $DRV"
+        sudo apt-get install -y -qq "$DRV"
+      else
+        sudo ubuntu-drivers install || sudo ubuntu-drivers autoinstall
+      fi
+    else
+      # 'autoinstall' was removed from ubuntu-drivers on Ubuntu 26.04;
+      # 'install' exists on 22.04/24.04/26.04 alike
+      sudo ubuntu-drivers install || sudo ubuntu-drivers autoinstall
+    fi
     warn "Driver installed. REBOOT, then re-run this script — it picks up where it left off."
     exit 0
   fi

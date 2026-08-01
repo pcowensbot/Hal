@@ -249,6 +249,13 @@ bundles its own CUDA runtime.
 To pick a specific driver instead: `ubuntu-drivers devices`, then e.g.
 `sudo apt install nvidia-driver-580-server`.
 
+**On Ubuntu 22.04 with a pre-Turing card, picking a specific driver is not
+optional:** jammy's detection marks the legacy **390** branch as "recommended"
+for a V100 *(verified)* even though 580-server is in its archive. On 24.04 and
+26.04 the recommendation is trustworthy — newer branches simply don't claim
+pre-Turing silicon. Rule of thumb: install the newest branch
+`ubuntu-drivers devices` lists for your card.
+
 Worth checking while you're here — a healthy passed-through card reports
 `0` uncorrected ECC errors on datacenter parts:
 
