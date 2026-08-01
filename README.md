@@ -108,7 +108,7 @@ HAL speaks to any OpenAI-compatible backend — Ollama is the default, but `LLM_
 
 ## Contributing
 
-Issues and pull requests are welcome. HAL is licensed under the **AGPL-3.0**: you can run it, modify it, and share it freely — but if you distribute a modified version or offer it as a network service, you must publish your changes under the same license. Improvements flow back to everyone. That's the deal.
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). First-time contributors sign a [CLA](CLA.md) (a licence grant, not a copyright assignment — you keep your copyright) so the project can maintain its dual-licence structure. Security issues: [SECURITY.md](SECURITY.md), privately please.
 
 ## Just here for the Volta Ollama binary?
 
@@ -143,7 +143,9 @@ a stock binary and GPU inference dies with no obvious error. Back up
 ```bash
 # Toolchain: CUDA 12.6 TOOLKIT (the CUDA-13 driver runs CUDA-12 binaries fine)
 # + Go 1.25.x — NOT 1.26.x (its toolchain currently segfaults on this codebase)
-sudo apt install -y cuda-toolkit-12-6 cmake ninja-build git   # via NVIDIA's cuda-keyring repo
+# + cmake ≥ 3.24 — Ubuntu 22.04's distro cmake (3.22) is too old; grab a
+#   binary release from Kitware on jammy
+sudo apt install -y cuda-toolkit-12-6 ninja-build git   # via NVIDIA's cuda-keyring repo
 
 git clone https://github.com/ollama/ollama.git && cd ollama
 git checkout v0.32.4
@@ -169,4 +171,9 @@ mirrors stock: binary → `/usr/local/bin/ollama`, payload →
 
 ## License
 
-[GNU Affero General Public License v3.0](LICENSE)
+HAL is **dual-licensed** — see [LICENSING.md](LICENSING.md) for the full picture:
+
+- **[AGPL-3.0](LICENSE)** (free) — for almost everybody. Run it, modify it, use it at work, serve your whole team. The only obligation: if you distribute it or offer a modified HAL as a network service, you publish your changes under the same licence.
+- **Commercial licence** (paid) — for shipping HAL inside proprietary products, hosting it as a service with private modifications, or organisations whose policy forbids AGPL. Revenue funds development and, eventually, a security bug bounty.
+
+Every release is AGPL-3.0 and stays AGPL-3.0 — the commercial licence is an additional option, not a step toward closing the project.
