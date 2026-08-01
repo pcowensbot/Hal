@@ -50,10 +50,19 @@ fi
 # --- 2. NVIDIA GPU -----------------------------------------------------------
 GPU=0
 VRAM_MB=0
+PRETURING=0
 if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
   GPU=1
   VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | sort -n | tail -1)
   log "NVIDIA GPU detected (${VRAM_MB} MiB VRAM)"
+  CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | sort -n | head -1 || echo "")
+  if [ -n "$CAP" ] && awk "BEGIN{exit !($CAP < 7.5)}"; then
+    PRETURING=1
+    warn "GPU compute capability $CAP is pre-Turing (Pascal/Volta) — the containerized stock"
+    warn "Ollama can NOT use it; inference will run on CPU. For GPU inference on these cards"
+    warn "use the bare-metal installer with a source-built Ollama (docs/models.md, Older GPUs)."
+    warn "All Volta (sm_70) cards should work there — only the Tesla V100 has been verified."
+  fi
   if ! $SUDO docker info 2>/dev/null | grep -qi nvidia; then
     log "Installing nvidia-container-toolkit..."
     curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
@@ -95,6 +104,8 @@ elif [ "$VRAM_MB" -ge 7000  ]; then MODEL="qwen3:8b"
 else                                MODEL="qwen3:4b"
 fi
 [ "$GPU" -eq 1 ] || MODEL="qwen3:4b"
+# Pre-Turing: stock (containerized) Ollama runs on CPU — size the model for CPU
+[ "$PRETURING" -eq 1 ] && MODEL="qwen3:4b"
 
 if [ ! -f .env ]; then
   log "Generating .env (random secrets, model: $MODEL)..."

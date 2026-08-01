@@ -27,13 +27,14 @@ sudo apt-get update -qq
 sudo apt-get install -y -qq curl git build-essential ca-certificates openssl lsb-release
 
 # --- 2. NVIDIA driver (optional) --------------------------------------------
-GPU=0; VRAM_MB=0
+GPU=0; VRAM_MB=0; PRETURING=0
 if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
   GPU=1
   VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | sort -n | tail -1)
   log "NVIDIA GPU ready (${VRAM_MB} MiB VRAM)"
   CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | sort -n | head -1 || echo "")
   if [ -n "$CAP" ] && awk "BEGIN{exit !($CAP < 7.5)}"; then
+    PRETURING=1
     warn "GPU compute capability $CAP is pre-Turing — stock Ollama ≥0.30 will NOT use it."
     warn "You need a source-built Ollama for this card — all Volta (sm_70) cards should work,"
     warn "but only the Tesla V100 has been verified. See docs/models.md (Older GPUs)."
@@ -112,6 +113,13 @@ elif [ "$VRAM_MB" -ge 7000  ]; then MODEL="qwen3:8b"
 else                                MODEL="qwen3:4b"
 fi
 [ "$GPU" -eq 1 ] || MODEL="qwen3:4b"
+# Pre-Turing card + stock Ollama = inference silently runs on CPU, where a
+# VRAM-sized model is unusable. Only size to VRAM if a Volta build is present.
+if [ "$PRETURING" -eq 1 ] && ! ollama --version 2>/dev/null | grep -qi volta; then
+  warn "Stock Ollama can't use this GPU — picking a small CPU-friendly model instead."
+  warn "After installing a Volta build (docs/models.md), re-run with HAL_MODEL=$MODEL"
+  MODEL="qwen3:4b"
+fi
 MODEL="${HAL_MODEL:-$MODEL}"
 
 if ! ollama list 2>/dev/null | grep -q "^${MODEL}"; then
