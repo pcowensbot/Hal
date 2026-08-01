@@ -35,10 +35,13 @@ if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
   CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | sort -n | head -1 || echo "")
   if [ -n "$CAP" ] && awk "BEGIN{exit !($CAP < 7.5)}"; then
     warn "GPU compute capability $CAP is pre-Turing — stock Ollama ≥0.30 will NOT use it."
-    warn "You need a source-built Ollama for this card. See docs/models.md (Older GPUs)."
+    warn "You need a source-built Ollama for this card — all Volta (sm_70) cards should work,"
+    warn "but only the Tesla V100 has been verified. See docs/models.md (Older GPUs)."
   fi
 elif lspci 2>/dev/null | grep -qi nvidia; then
   warn "NVIDIA hardware present but no driver. Installing (needs a reboot)..."
+  # Server/cloud images don't ship ubuntu-drivers-common
+  command -v ubuntu-drivers >/dev/null 2>&1 || sudo apt-get install -y -qq ubuntu-drivers-common
   sudo ubuntu-drivers autoinstall
   warn "Driver installed. REBOOT, then re-run this script — it picks up where it left off."
   exit 0

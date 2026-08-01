@@ -138,8 +138,9 @@ tag doesn't specify a quant, Ollama's default is usually q4_K_M-class anyway.
 ## Older GPUs (Pascal / Volta): read this before upgrading Ollama
 
 Stock Ollama ≥ 0.30 **dropped support for pre-Turing GPUs** — Pascal (sm_60:
-GTX 10-series, Tesla P100) and Volta (sm_70: Tesla V100). These cards still run
-modern models perfectly well; upstream just stopped shipping kernels for them.
+GTX 10-series, Tesla P100) and Volta (sm_70: Tesla V100 in all variants, Titan V,
+Quadro GV100). These cards still run modern models perfectly well; upstream just
+stopped shipping kernels for them.
 
 If you have one of these cards:
 
@@ -154,7 +155,9 @@ If you have one of these cards:
 - Keep a backup of your known-good binary and library payload before any upgrade
   so you can roll back.
 
-Community **"Volta builds"** — prebuilt Ollama binaries for V100-class cards —
-are planned/available; check the project's discussions for links. A 32 GB V100
-remains a genuinely great HAL card: it runs `qwen3.6:27b` at 64K context with
-room to spare.
+Community **"Volta builds"** — prebuilt Ollama binaries for Volta-class cards —
+are planned/available; check the project's discussions for links. Any Volta
+(sm_70) card should work with these builds, but **only the Tesla V100 has
+actually been verified** — reports from Titan V / Quadro GV100 owners are
+welcome either way. A 32 GB V100 remains a genuinely great HAL card: it runs
+`qwen3.6:27b` at 64K context with room to spare.

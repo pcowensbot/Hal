@@ -68,7 +68,7 @@ if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
 else
   if lspci 2>/dev/null | grep -qi 'nvidia'; then
     warn "NVIDIA hardware found but no working driver (nvidia-smi failed)."
-    warn "HAL will run on CPU. Install the driver (sudo ubuntu-drivers autoinstall; reboot) and re-run for GPU inference."
+    warn "HAL will run on CPU. Install the driver (sudo apt install ubuntu-drivers-common && sudo ubuntu-drivers autoinstall; reboot) and re-run for GPU inference."
   else
     warn "No NVIDIA GPU detected — running on CPU (slow, but works with small models)."
   fi
