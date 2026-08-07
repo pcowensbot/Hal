@@ -96,14 +96,97 @@ Adding cards under Ollama buys **capacity and flexibility, not concurrency**:
 - **More resident models:** with `OLLAMA_MAX_LOADED_MODELS`, the chat
   all-rounder lives on GPU 0 and the coder model on GPU 1 — no more
   evict/reload thrash when different consumers want different models.
-- **The two-instance hack:** run two Ollama instances, each pinned to a card
-  with `CUDA_VISIBLE_DEVICES`, and put nginx `least_conn` in front; point
-  `LLM_BASE_URL` at nginx. Crude, doubles your slot count, works today. Its
-  limit: both instances need their own copy of the model in VRAM, and you still
-  don't have continuous batching.
-
 Stage 1 is the right stop if your problem is "I want a bigger/second model,"
-not "I have 20 concurrent users."
+not "I have more users." For that, keep reading.
+
+---
+
+## Stage 1.5 — Replicas: the same model on every card
+
+If your model **fits on one card**, don't shard it — **copy it**. One backend
+instance per GPU, each holding its own complete copy of the same model, with a
+load balancer splitting requests between them. This is data parallelism, and
+it's the most reachable rung on this ladder: it runs on today's Ollama
+(including our Volta builds), needs no new inference stack, and no HAL changes.
+
+The reason it slots in so cleanly: **every consumer already funnels through
+HAL's API** — the chat UI, every `/v1` device, every agent. HAL is the single
+front door, so the fan-out point already exists. Clients never know the
+backend multiplied; only `LLM_BASE_URL` moves.
+
+```
+users/agents ──► HAL ──► nginx (least_conn) ──► ollama :11434  (GPU 0)
+                                            └─► ollama :11435  (GPU 1)
+```
+
+Second Ollama instance, pinned to GPU 1 (`/etc/systemd/system/ollama-gpu1.service`):
+
+```ini
+[Unit]
+Description=Ollama replica — GPU 1
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/ollama serve
+User=ollama
+Environment="CUDA_VISIBLE_DEVICES=1"
+Environment="OLLAMA_HOST=127.0.0.1:11435"
+Environment="OLLAMA_CONTEXT_LENGTH=65536"
+Environment="OLLAMA_KEEP_ALIVE=-1"
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+(Add `Environment="CUDA_VISIBLE_DEVICES=0"` to the stock instance's drop-in so
+it stays off GPU 1. Both instances can share one `OLLAMA_MODELS` directory —
+pull once, serve twice.)
+
+The balancer (nginx on the same box):
+
+```nginx
+upstream ollama_pool {
+    least_conn;
+    server 127.0.0.1:11434;
+    server 127.0.0.1:11435;
+}
+server {
+    listen 127.0.0.1:11500;
+    location / {
+        proxy_pass http://ollama_pool;
+        proxy_http_version 1.1;
+        proxy_buffering off;          # streaming
+        proxy_read_timeout 600s;
+    }
+}
+```
+
+And the entire HAL-side migration: `LLM_BASE_URL="http://127.0.0.1:11500"`.
+
+**What you get:** every request runs at full single-GPU speed, and N cards
+serve N cards' worth of simultaneous load. No NVLink requirement, no
+cross-GPU traffic at all — two V100s in plain PCIe slots work exactly as well
+as SXM2 ones here.
+
+**What to know, honestly:**
+
+- **VRAM is spent per replica** — two full copies of weights + KV. That's the
+  price of replication vs. sharding; a 27B at 4-bit on 32 GB cards affords it.
+- **Prompt-cache locality:** chat completions are stateless (full history
+  ships each call), so no stickiness is *required* — but a long conversation
+  that lands on the other replica re-prefills its whole context (seconds, on
+  64K agent histories). There's no clean per-consumer signal to hash on at
+  this hop — HAL makes the backend calls itself, so the balancer can't see
+  which device a request came from. `least_conn` and living with occasional
+  re-prefill is the honest configuration; true per-consumer backend routing
+  belongs in HAL (see the roadmap list below).
+- **Still slot-based** — you've multiplied Ollama's slots, not changed their
+  nature. Two replicas ≈ twice the single-card experience (estimate: 5–10
+  mixed human/agent consumers feeling instant on 2× V100-32GB). For 10–20
+  *simultaneous* streams, continuous batching still wins — and vLLM can run
+  this same replica topology natively (`--data-parallel-size N`), so the
+  pattern carries forward to Stage 2 unchanged.
 
 ---
 
@@ -176,6 +259,7 @@ Back-of-envelope, to be validated — the arithmetic that matters is
 |---|---|---|
 | **2× A100 SXM4 40 GB, TP=2** | 80 GB | 27–32B at 4-bit + ~55 GB KV → **10–20 concurrent 8–16K streams**, interactive speeds. The sweet spot for this doc's title question. |
 | **4× A100 SXM4 40 GB, TP=4** | 160 GB | 70B-class at 4-bit with generous KV, or a 27B at bf16 + huge concurrency. Team-of-50 territory. |
+| **2× V100 32 GB, replicas** (Stage 1.5) | 64 GB | Same 27B on each card, load-balanced — ~2× the single-card experience (est. 5–10 mixed consumers). No NVLink needed; runs on today's Volta Ollama build. |
 | **4× V100 SXM2 32 GB, TP=4** | 128 GB | 27–32B at **FP16** (~55 GB) + ~70 GB KV. See the V100 section below — real, with caveats. |
 
 Per-stream generation speed under load lands wherever aggregate memory
