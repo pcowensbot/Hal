@@ -30,7 +30,7 @@ Get an API key by creating a device in the HAL dashboard (Admin > API Devices).
 
 | Service | Backend | VRAM | Status |
 |---------|---------|------|--------|
-| **LLM (Devstral 24B)** | Ollama | ~15GB | Ready |
+| **LLM (dashboard default model)** | Ollama | model-dependent | Ready |
 | **Whisper (STT)** | faster-whisper | ~4GB | Planned — service needs setup |
 | **Image Enhance** | Real-ESRGAN | ~1GB | Planned — service needs setup |
 | **Image Categorize** | CLIP | ~2GB | Planned — service needs setup |
@@ -61,7 +61,7 @@ Returns GPU hardware stats, loaded models, and queue state.
     "utilizationPct": 12
   },
   "loadedModels": [
-    { "name": "devstral:24b-small-2505-q4_K_M", "size": 14000000000, "sizeVram": 15000000000 }
+    { "name": "qwen3.6:27b", "size": 14000000000, "sizeVram": 15000000000 }
   ],
   "queue": {
     "active": null,
@@ -118,7 +118,7 @@ Submit a chat completion request. Supports any model available in Ollama.
 **Request:**
 ```json
 {
-  "model": "devstral:24b-small-2505-q4_K_M",
+  "model": "qwen3.6:27b",
   "messages": [
     { "role": "system", "content": "You are a helpful assistant." },
     { "role": "user", "content": "Hello" }
@@ -131,7 +131,7 @@ Submit a chat completion request. Supports any model available in Ollama.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `model` | string | No | `devstral:24b-small-2505-q4_K_M` | Ollama model name |
+| `model` | string | No | dashboard default model | Ollama model name |
 | `messages` | array | Yes | — | OpenAI-format message array |
 | `priority` | string | No | `interactive` | `interactive` (wait for result) or `batch` (return job ID) |
 | `tools` | array | No | — | Tool definitions for function calling |
@@ -166,82 +166,16 @@ Submit a chat completion request. Supports any model available in Ollama.
 
 ### OpenAI-Compatible Endpoint (Alternative)
 
-If your tool speaks the OpenAI API natively (like OpenCode), use this instead:
+If your tool speaks the OpenAI API natively (like OpenCode), skip the broker and
+use HAL's `/v1` surface instead — same auth header, streaming + tool calls,
+per-device model pins and defaults, correlation IDs, self-serve request logs.
+Full reference: **[DEVICE_API.md](DEVICE_API.md)**.
 
 ```
 POST /v1/chat/completions
 GET  /v1/models
 GET  /v1/logs
 ```
-
-Same auth header. Streaming and tool calls supported. Configure your tool:
-
-```json
-{
-  "baseURL": "http://your-hal-server:3000/v1",
-  "apiKey": "hal_YOUR_DEVICE_API_KEY",
-  "model": "qwen3.5:27b-q4_K_M"
-}
-```
-
-#### Per-device defaults
-
-HAL applies any `Device.defaults` JSON object as default request params before invoking the model. Request-level params override device defaults, so callers can still pass per-call overrides.
-
-Example device row:
-```json
-{ "think": false, "temperature": 0.3, "seed": 42 }
-```
-
-With those defaults, every `/v1/chat/completions` call from this device gets `think: false` (no Qwen reasoning blocks in the response), `temperature: 0.3`, and `seed: 42` — even if the client doesn't send them. Useful when the calling tool's provider config can't pass arbitrary params.
-
-#### Per-device model pin
-
-If `Device.pinnedModel` is set, that model is **always** used regardless of what the client sends or what the dashboard default is. Designed for security/operations consumers who want to test model upgrades explicitly rather than ride the dashboard default. Coordinate with the consumer before swapping a pinned model.
-
-#### Correlation header (`X-Request-Id`)
-
-Send `X-Request-Id: <your-id>` (alphanumeric / `-` / `_`, max 128 chars) on a `/v1/chat/completions` request. HAL:
-- Echoes the value back on the response (`X-Request-Id` header)
-- Persists it into `device_api_logs.metadata.requestId`
-
-Lets you join your own logs to HAL's `device_api_logs` rows when debugging.
-
-#### `GET /v1/logs` — pull your own audit logs
-
-Read-only, scoped to the calling API key. No admin or psql access required.
-
-```
-GET /v1/logs?limit=50&before=2026-05-01T00:00:00Z
-```
-
-Query params:
-- `limit` — default 50, capped at 200
-- `before` — ISO timestamp; returns rows older than this (cursor pagination — pass back the previous response's `nextCursor`)
-
-Response:
-```json
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "...",
-      "endpoint": "/v1/chat/completions",
-      "method": "POST",
-      "model": "qwen3.5:27b-q4_K_M",
-      "status": 200,
-      "durationMs": 1832,
-      "tokenCount": 1240,
-      "error": null,
-      "metadata": { "requestId": "my-batch-job-001", "streaming": true },
-      "createdAt": "2026-05-02T06:14:22.012Z"
-    }
-  ],
-  "nextCursor": "2026-05-02T06:14:22.012Z"
-}
-```
-
-Prompt/response bodies are only returned if the device has `logPromptContent` enabled (private-by-default).
 
 ---
 
@@ -468,7 +402,7 @@ const llmRes = await fetch(`${API}/api/gpu/llm`, {
   method: "POST",
   headers: HEADERS,
   body: JSON.stringify({
-    model: "devstral:24b-small-2505-q4_K_M",
+    model: "qwen3.6:27b",
     messages: [{ role: "user", content: "Explain DNS resolution" }],
     priority: "interactive"
   })

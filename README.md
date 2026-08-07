@@ -87,7 +87,7 @@ Which model fits your card → [docs/models.md](docs/models.md), including how t
                 └─────────────────────────────────────────────────────────┘
 ```
 
-Want to spread it out — SSL on a separate reverse-proxy host, HAL in a VM with GPU passthrough, models served to several machines? That's exactly how the reference deployment runs. See the *advanced layouts* sections of the install docs and the Proxmox guide.
+Want to spread it out — SSL on a separate reverse-proxy host, HAL in a VM with GPU passthrough, models served to several machines? That's exactly how the reference deployment runs. See the *advanced layouts* sections of the install docs and the Proxmox guide. Outgrowing one GPU — 10–20 concurrent users, multi-GPU serving, vLLM behind HAL? That's [docs/scaling.md](docs/scaling.md); the backend is swappable by design.
 
 ## Configuration
 
@@ -104,6 +104,7 @@ HAL speaks to any OpenAI-compatible backend — Ollama is the default, but `LLM_
 | [docs/models.md](docs/models.md) | Choosing a model for your VRAM, context-length tuning, older GPUs |
 | [docs/proxmox-gpu-passthrough.md](docs/proxmox-gpu-passthrough.md) | Passing an NVIDIA GPU into a Proxmox VM |
 | [docs/DEVICE_API.md](docs/DEVICE_API.md) | Device keys + the OpenAI-compatible `/v1` API |
+| [docs/scaling.md](docs/scaling.md) | Concurrency + multi-GPU roadmap — serving 10–20 users, vLLM, A100/V100 clusters |
 | [docs/gpu-broker.md](docs/gpu-broker.md) | Experimental multi-project GPU job broker |
 
 ## Contributing

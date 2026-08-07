@@ -1,373 +1,281 @@
-# HAL Device API Documentation
+# Device API — HAL as your LAN's LLM server
 
-## Overview
+Any machine on your network — coding agents, scripts, bots, home automation,
+another server — can use HAL's GPU as its LLM backend through a **device API
+key**. HAL exposes two surfaces for this:
 
-HAL now functions as a local LLM server for your IoT devices! Any device on your network can use HAL's GPU-powered LLM by using an API key.
+| Surface | Use it for |
+|---|---|
+| **`/v1` — OpenAI-compatible** (primary) | Anything that speaks the OpenAI API: OpenCode and other coding agents, OpenAI SDKs, LangChain, MCP clients, LiteLLM. Streaming, tool calling, per-device policy. |
+| **`/api/llm` — simple JSON** (legacy) | Tiny clients where an OpenAI SDK is overkill — a microcontroller, a shell script, a robot. One POST, one JSON reply. |
 
-## Features
-
-✅ **Device Management UI** - Create and manage API keys through the dashboard
-✅ **Secure API Keys** - SHA-256 hashed keys with `hal_` prefix
-✅ **Usage Tracking** - Monitor API calls and last used time for each device
-✅ **Multiple Endpoints** - Chat, generate, and list models
-✅ **Authenticated Access** - Each device has its own API key tied to a user
-
----
-
-## Getting Started
-
-### 1. Create a Device API Key
-
-1. Log in to HAL as a parent or user
-2. Navigate to **Dashboard** → **My Devices**
-3. Click **"Create New Device"**
-4. Enter:
-   - **Device Name**: e.g., "Vector Bot", "Kitchen Assistant"
-   - **Description**: Optional description of what the device does
-5. Click **"Create Device"**
-6. **Save the API key!** It's only shown once and looks like:
-   ```
-   hal_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6
-   ```
-
-### 2. Use the API Key
-
-All API requests must include the API key in the `Authorization` header:
-
-```
-Authorization: Bearer hal_YOUR_API_KEY_HERE
-```
+Both authenticate the same way and both log to the same per-device audit trail.
 
 ---
 
-## API Endpoints
+## 1. Create a device key
 
-Base URL: `http://your-hal-server:3000` (or your public HTTPS domain)
+1. Log in to HAL → **Dashboard → Devices**
+2. **Create New Device** — name it after the consumer ("OpenCode — laptop",
+   "Kitchen assistant"), description optional
+3. **Copy the key immediately** — it's shown once, then only its SHA-256 hash
+   is stored:
 
-### 1. Chat Endpoint (Conversation)
+   ```
+   hal_a1b2c3d4e5f6...
+   ```
 
-**POST** `/api/llm/chat`
+Send it on every request:
 
-Best for: Maintaining conversation context with back-and-forth chat
+```
+Authorization: Bearer hal_YOUR_API_KEY
+```
 
-**Request:**
+Base URL: `http://your-hal-server:3000` (or your HTTPS domain — use HTTPS for
+anything that leaves your LAN).
+
+---
+
+## 2. The `/v1` OpenAI-compatible API
+
+### Endpoints
+
+```
+POST /v1/chat/completions    # chat, streaming, tool calls
+GET  /v1/models              # models available to point at
+GET  /v1/logs                # your own request logs (see §4)
+```
+
+### Point your tool at HAL
+
+Generic OpenAI-style config — works for most tools:
+
 ```json
 {
-  "message": "What's the weather like?",
-  "model": "llama3.1:8b",
-  "context": [],
-  "system": "You are a helpful home assistant"
+  "baseURL": "http://your-hal-server:3000/v1",
+  "apiKey": "hal_YOUR_API_KEY",
+  "model": "qwen3.6:27b"
 }
 ```
 
-**Response:**
-```json
-{
-  "message": "I don't have access to weather data...",
-  "model": "llama3.1:8b",
-  "device": {
-    "id": "device-uuid",
-    "name": "Vector Bot"
-  },
-  "context": [...],
-  "done": true,
-  "eval_count": 150,
-  "eval_duration": 2500000000
-}
+Python (OpenAI SDK):
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://your-hal-server:3000/v1",
+                api_key="hal_YOUR_API_KEY")
+
+resp = client.chat.completions.create(
+    model="qwen3.6:27b",
+    messages=[{"role": "user", "content": "Explain DNS in two sentences."}],
+    stream=True,
+)
+for chunk in resp:
+    print(chunk.choices[0].delta.content or "", end="", flush=True)
 ```
 
-**Example (cURL):**
+cURL:
+
 ```bash
-curl -X POST http://localhost:3000/api/llm/chat \
+curl -X POST http://your-hal-server:3000/v1/chat/completions \
   -H "Authorization: Bearer hal_YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "message": "Tell me a joke",
-    "model": "llama3.1:8b"
-  }'
+  -d '{"model":"qwen3.6:27b","messages":[{"role":"user","content":"say hi"}]}'
 ```
 
-**Example (Python):**
-```python
-import requests
+Supported request features: `stream` (SSE), `tools` + `tool_choice` (function
+calling), sampling params (`temperature`, `seed`, …), and `think`
+(enable/disable reasoning blocks on models that support thinking — an
+extension beyond the OpenAI schema, passed through to the backend).
 
-url = "http://localhost:3000/api/llm/chat"
-headers = {
-    "Authorization": "Bearer hal_YOUR_API_KEY",
-    "Content-Type": "application/json"
-}
-data = {
-    "message": "Hello from my robot!",
-    "model": "llama3.1:8b",
-    "system": "You are a helpful robot assistant"
-}
+If you omit `model`, HAL resolves one for you — see the pin/default ladder
+below.
 
-response = requests.post(url, json=data, headers=headers)
-print(response.json()["message"])
+### Per-device model pin (`pinnedModel`)
+
+Set a **pinned model** on the device row and that model is used **regardless
+of what the client sends**. Model resolution, most specific wins:
+
+1. Device `pinnedModel` — beats everything
+2. `model` in the request
+3. Dashboard default model
+4. `LLM_DEFAULT_MODEL` env fallback
+
+Use pins to give a coding agent the fast agentic model while chat keeps the
+all-rounder, or to hold a production consumer on a known-good model while you
+test upgrades. Coordinate before swapping a pinned model — the consumer can't
+override it.
+
+### Per-device defaults (`defaults`)
+
+A JSON object of request parameters merged **under** every request from that
+device — request-level values win. Example device row:
+
+```json
+{ "think": false, "temperature": 0.3, "seed": 42 }
 ```
+
+Every call from that device now gets deterministic, no-reasoning-blocks
+behavior even when the calling tool can't pass custom params. This is the
+lever for tools whose provider config is rigid.
+
+### Correlation IDs (`X-Request-Id`)
+
+Send `X-Request-Id: <your-id>` (alphanumeric / `-` / `_`, max 128 chars) and
+HAL echoes it on the response and persists it into that request's log row
+(`metadata.requestId`) — join your logs to HAL's when debugging.
 
 ---
 
-### 2. Generate Endpoint (Simple)
+## 3. Limits & payload caps
 
-**POST** `/api/llm/generate`
+| Limit | Default | Where |
+|---|---|---|
+| `/v1` requests per key | 30/min | `V1_RATE_LIMIT_WINDOW_MS` / `V1_RATE_LIMIT_MAX_REQUESTS` |
+| `/api/*` requests | 60/min | `RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX_REQUESTS` |
+| Per-user daily / monthly call quotas | unset | Per-user, set by an admin in the dashboard |
+| `/v1` request body | 2 MB | Express body limit on `/v1` |
+| `/v1` `messages` payload | 100 KB | `V1_MAX_MESSAGES_BYTES` — raise it (e.g. `2000000`) if agents send big file context |
 
-Best for: Simple text generation without conversation context
+Exceeding a quota returns `429` with detail:
 
-**Request:**
 ```json
-{
-  "prompt": "Write a haiku about robots",
-  "model": "llama3.1:8b",
-  "system": "You are a creative poet"
-}
+{ "error": "Daily API limit reached (500 calls). Resets at midnight.",
+  "limitType": "daily", "current": 500, "limit": 500 }
 ```
 
-**Response:**
-```json
-{
-  "response": "Metal hearts that beat\nSilicon dreams come alive\nFuture now arrives",
-  "model": "llama3.1:8b",
-  "device": {
-    "id": "device-uuid",
-    "name": "Vector Bot"
-  },
-  "done": true,
-  "context": [...],
-  "eval_count": 45,
-  "eval_duration": 950000000
-}
-```
+An oversize `messages` payload returns `413` with the byte counts in the
+message.
 
 ---
 
-### 3. List Models
+## 4. `GET /v1/logs` — pull your own audit logs
 
-**GET** `/api/llm/models`
+Read-only, scoped to the calling key. Debug your own traffic without admin
+access or psql.
 
-Get available LLM models
+```
+GET /v1/logs?limit=50&before=2026-05-01T00:00:00Z
+```
 
-**Response:**
+- `limit` — default 50, max 200
+- `before` — ISO timestamp cursor; pass the previous response's `nextCursor`
+
 ```json
 {
-  "models": [
+  "object": "list",
+  "data": [
     {
-      "name": "llama3.1:8b",
-      "size": 4661224676,
-      "modified_at": "2024-01-15T10:30:00Z"
+      "id": "…",
+      "endpoint": "/v1/chat/completions",
+      "model": "qwen3.6:27b",
+      "status": 200,
+      "durationMs": 1832,
+      "tokenCount": 1240,
+      "metadata": { "requestId": "my-batch-job-001", "streaming": true },
+      "createdAt": "2026-05-02T06:14:22.012Z"
     }
   ],
-  "device": {
-    "id": "device-uuid",
-    "name": "Vector Bot"
-  }
+  "nextCursor": "2026-05-02T06:14:22.012Z"
 }
 ```
 
----
-
-## Request Parameters
-
-### Chat Endpoint
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `message` | string | Yes | User's message |
-| `model` | string | No | Model name (default: `llama3.1:8b`) |
-| `context` | array | No | Previous conversation messages |
-| `system` | string | No | System prompt for the LLM |
-
-### Generate Endpoint
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `prompt` | string | Yes | Text to generate from |
-| `model` | string | No | Model name (default: `llama3.1:8b`) |
-| `system` | string | No | System prompt for the LLM |
+Prompt/response *bodies* appear only if the device has `logPromptContent`
+enabled — private by default.
 
 ---
 
-## Conversation Context
+## 5. The legacy `/api/llm` endpoints
 
-To maintain conversation history, save the `context` array from each response and send it with the next request:
+Minimal JSON endpoints for clients that don't want an OpenAI SDK. Same
+`Authorization` header.
+
+### `POST /api/llm/chat`
+
+```json
+{
+  "message": "Should I charge my battery?",
+  "system": "You are Vector, a helpful robot",
+  "context": [],
+  "model": "qwen3:8b"
+}
+```
+
+`model` and `system` are optional (model falls back to the dashboard default).
+`context` is an OpenAI-style message array — send back the `context` from the
+previous response to continue a conversation:
+
+```json
+{
+  "message": "I don't have access to your battery data…",
+  "model": "qwen3:8b",
+  "device": { "id": "device-uuid", "name": "Vector Bot" },
+  "context": [ …full message history including this reply… ],
+  "done": true,
+  "eval_count": 150
+}
+```
 
 ```python
-context = []
-
-# First message
-response = requests.post(url, json={
-    "message": "What's 2+2?",
-    "context": context
-}, headers=headers)
-context = response.json()["context"]
-
-# Second message (remembers previous)
-response = requests.post(url, json={
-    "message": "What about 3+3?",
-    "context": context
-}, headers=headers)
-```
-
----
-
-## Error Handling
-
-### Authentication Errors
-
-**401 Unauthorized:**
-```json
-{
-  "error": "API key required"
-}
-```
-
-**403 Forbidden:**
-```json
-{
-  "error": "Invalid API key"
-}
-```
-
-### Validation Errors
-
-**400 Bad Request:**
-```json
-{
-  "error": "Message is required"
-}
-```
-
-### Server Errors
-
-**500 Internal Server Error:**
-```json
-{
-  "error": "Failed to process chat request",
-  "details": "Ollama API error..."
-}
-```
-
----
-
-## Security Best Practices
-
-1. **Never commit API keys to git**
-2. **Store API keys in environment variables**
-3. **Use HTTPS in production** (not HTTP)
-4. **Rotate keys periodically** - delete old devices and create new ones
-5. **Monitor usage** - Check "Last Used" and "Requests" in the dashboard
-6. **Delete unused devices** - Remove API keys for decommissioned devices
-
----
-
-## Use Cases
-
-### 🤖 Vector Robot Integration
-```python
-# Vector Bot with HAL LLM
 import requests
 
-def ask_hal(question):
-    response = requests.post(
-        "http://hal-server:3000/api/llm/chat",
-        headers={"Authorization": f"Bearer {API_KEY}"},
-        json={"message": question, "system": "You are Vector, a helpful robot"}
-    )
-    return response.json()["message"]
+URL = "http://your-hal-server:3000/api/llm/chat"
+HEADERS = {"Authorization": "Bearer hal_YOUR_API_KEY"}
 
-# Vector can now use your local GPU!
-answer = ask_hal("Should I charge my battery?")
+context = []
+for question in ["What's 2+2?", "And doubled?"]:
+    r = requests.post(URL, headers=HEADERS,
+                      json={"message": question, "context": context}).json()
+    context = r["context"]          # carries the conversation forward
+    print(r["message"])
 ```
 
-### 🏠 Home Automation
-```python
-# Smart home assistant
-def control_home(command):
-    response = requests.post(
-        "http://hal-server:3000/api/llm/generate",
-        headers={"Authorization": f"Bearer {API_KEY}"},
-        json={
-            "prompt": f"Parse this smart home command: {command}",
-            "system": "Extract device and action from commands"
-        }
-    )
-    return response.json()["response"]
-```
+### `POST /api/llm/generate`
 
-### 📱 Custom Chatbot
-```python
-# Build your own chatbot using HAL's GPU
-class HalChatbot:
-    def __init__(self, api_key):
-        self.api_key = api_key
-        self.context = []
+One-shot generation, no conversation state:
 
-    def chat(self, message):
-        response = requests.post(
-            "http://hal-server:3000/api/llm/chat",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json={
-                "message": message,
-                "context": self.context
-            }
-        )
-        data = response.json()
-        self.context = data["context"]
-        return data["message"]
-```
-
----
-
-## Rate Limiting
-
-HAL applies the following rate limits:
-- **60 requests per minute** per API key
-- Applies to all `/api/*` endpoints
-
-If you exceed the limit, you'll receive:
 ```json
-{
-  "error": "Too many requests, please try again later"
-}
+{ "prompt": "Write a haiku about robots", "system": "You are a poet" }
 ```
 
----
+→ `{ "response": "…", "model": "…", "device": {…}, "done": true, "eval_count": 45 }`
 
-## Database Schema
+### `GET /api/llm/models`
 
-Devices are stored with the following structure:
-
-```sql
-CREATE TABLE devices (
-    id          UUID PRIMARY KEY,
-    user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
-    name        VARCHAR NOT NULL,
-    description TEXT,
-    api_key_hash VARCHAR UNIQUE NOT NULL,  -- SHA-256 hash
-    last_used_at TIMESTAMP,
-    request_count INTEGER DEFAULT 0,
-    created_at  TIMESTAMP DEFAULT NOW(),
-    updated_at  TIMESTAMP DEFAULT NOW()
-);
-```
+→ `{ "models": [ { "name": "qwen3.6:27b", … } ], "device": {…} }`
 
 ---
 
-## Next Steps
+## 6. Errors
 
-1. ✅ **Create a device** in the dashboard
-2. ✅ **Save the API key** securely
-3. ✅ **Test with cURL** to verify it works
-4. ✅ **Integrate with your device** using the examples above
-5. ✅ **Monitor usage** in the "My Devices" dashboard
+| Status | Meaning |
+|---|---|
+| `401` | Missing API key |
+| `403` | Invalid or deleted key |
+| `400` | Validation — empty `message`/`prompt`, malformed body |
+| `413` | `messages` payload over `V1_MAX_MESSAGES_BYTES` |
+| `429` | Per-minute rate limit or per-user daily/monthly quota (see §3) |
+| `500` | Backend failure — check `GET /v1/logs`, then HAL's logs (`pm2 logs hal`) |
 
 ---
 
-## Support
+## 7. Key hygiene
 
-Questions? Check:
-- `server/src/routes/devices.js` - Device management code
-- `server/src/routes/llm.js` - LLM API endpoints
-- `server/src/middleware/auth.js` - Authentication logic
+1. **One key per consumer** — revoking one tool shouldn't break the others,
+   and per-device logs stay meaningful
+2. Store keys in env vars / secret stores, never in git
+3. HTTPS for anything beyond your LAN
+4. Watch **Last Used** and request counts in the dashboard; delete keys for
+   decommissioned consumers
+5. Rotate by creating a new device and deleting the old one
 
-Enjoy using HAL as your local LLM server! 🚀🤖
+---
+
+## Related
+
+- **[gpu-broker.md](gpu-broker.md)** — the experimental queued job broker
+  (`/api/gpu/*`) for sharing the GPU across whole projects
+- **[models.md](models.md)** — which model to pin for which consumer
+- **[scaling.md](scaling.md)** — when one GPU stops being enough for all of
+  your devices at once
