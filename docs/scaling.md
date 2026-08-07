@@ -104,19 +104,20 @@ not "I have more users." For that, keep reading.
 ## Stage 1.5 — Replicas: the same model on every card
 
 If your model **fits on one card**, don't shard it — **copy it**. One backend
-instance per GPU, each holding its own complete copy of the same model, with a
-load balancer splitting requests between them. This is data parallelism, and
-it's the most reachable rung on this ladder: it runs on today's Ollama
-(including our Volta builds), needs no new inference stack, and no HAL changes.
+instance per GPU, each holding its own complete copy of the same model, with
+requests split between them. This is data parallelism, and it's the most
+reachable rung on this ladder: it runs on today's Ollama (including our Volta
+builds), needs no new inference stack, and HAL does the load balancing itself.
 
 The reason it slots in so cleanly: **every consumer already funnels through
 HAL's API** — the chat UI, every `/v1` device, every agent. HAL is the single
-front door, so the fan-out point already exists. Clients never know the
-backend multiplied; only `LLM_BASE_URL` moves.
+front door, so the fan-out point already exists — and it's the *only* place
+that knows which consumer each request belongs to. Clients never know the
+backend multiplied; one `.env` line moves.
 
 ```
-users/agents ──► HAL ──► nginx (least_conn) ──► ollama :11434  (GPU 0)
-                                            └─► ollama :11435  (GPU 1)
+users/agents ──► HAL (affinity router) ──► ollama :11434  (GPU 0)
+                                       └─► ollama :11435  (GPU 1)
 ```
 
 Second Ollama instance, pinned to GPU 1 (`/etc/systemd/system/ollama-gpu1.service`):
@@ -143,50 +144,59 @@ WantedBy=multi-user.target
 it stays off GPU 1. Both instances can share one `OLLAMA_MODELS` directory —
 pull once, serve twice.)
 
-The balancer (nginx on the same box):
+Then tell HAL about both replicas — **HAL is the load balancer**:
 
-```nginx
-upstream ollama_pool {
-    least_conn;
-    server 127.0.0.1:11434;
-    server 127.0.0.1:11435;
-}
-server {
-    listen 127.0.0.1:11500;
-    location / {
-        proxy_pass http://ollama_pool;
-        proxy_http_version 1.1;
-        proxy_buffering off;          # streaming
-        proxy_read_timeout 600s;
-    }
-}
+```bash
+# server/.env
+LLM_BASE_URLS="http://127.0.0.1:11434,http://127.0.0.1:11435"
 ```
 
-And the entire HAL-side migration: `LLM_BASE_URL="http://127.0.0.1:11500"`.
+That's the entire migration. With `LLM_BASE_URLS` set, HAL routes each request
+by **consumer affinity**: every `/v1` device key and every chat user is
+consistently assigned to one replica (rendezvous hashing), so *the same
+consumer always hits the same card*. This matters because of prompt caching —
+a conversation that stays on one replica re-uses its KV prefix and only pays
+for new tokens; bouncing between replicas would re-prefill the whole history
+(seconds, on long agent contexts). HAL can do this and a generic proxy in
+front of the backends can't: HAL knows *which device or user* each request
+belongs to, while the backend hop only sees anonymous HAL→Ollama traffic.
 
-**What you get:** every request runs at full single-GPU speed, and N cards
-serve N cards' worth of simultaneous load. No NVLink requirement, no
-cross-GPU traffic at all — two V100s in plain PCIe slots work exactly as well
-as SXM2 ones here.
+Failure handling is built in: a replica that stops answering (connection
+refused / timeout) is benched for `LLM_BACKEND_COOLDOWN_MS` (default 30 s) and
+its consumers fail over to the next replica — everyone else stays put. HTTP
+errors (bad model name, oversized payload) do *not* fail over, since they'd
+fail identically everywhere. The dashboard's loaded-models view aggregates
+across all replicas.
+
+**What you get:** every request runs at full single-GPU speed, N cards serve
+N cards' worth of simultaneous load, and each consumer's prompt cache stays
+hot on its home card. No NVLink requirement, no cross-GPU traffic at all —
+two V100s in plain PCIe slots work exactly as well as SXM2 ones here.
 
 **What to know, honestly:**
 
 - **VRAM is spent per replica** — two full copies of weights + KV. That's the
   price of replication vs. sharding; a 27B at 4-bit on 32 GB cards affords it.
-- **Prompt-cache locality:** chat completions are stateless (full history
-  ships each call), so no stickiness is *required* — but a long conversation
-  that lands on the other replica re-prefills its whole context (seconds, on
-  64K agent histories). There's no clean per-consumer signal to hash on at
-  this hop — HAL makes the backend calls itself, so the balancer can't see
-  which device a request came from. `least_conn` and living with occasional
-  re-prefill is the honest configuration; true per-consumer backend routing
-  belongs in HAL (see the roadmap list below).
+- **Affinity balances consumers, not load.** With many consumers the hash
+  spreads them evenly (validated: 200 keys split 101/99); with exactly two
+  heavy consumers you might get lucky or unlucky. If one replica runs hot,
+  adding a third replica (or splitting a heavy consumer across two device
+  keys) rebalances.
+- **Streams can't fail over mid-generation** — failover applies up to the
+  first byte; a replica dying mid-stream surfaces as a broken response and
+  the retry lands on a healthy card.
 - **Still slot-based** — you've multiplied Ollama's slots, not changed their
   nature. Two replicas ≈ twice the single-card experience (estimate: 5–10
   mixed human/agent consumers feeling instant on 2× V100-32GB). For 10–20
   *simultaneous* streams, continuous batching still wins — and vLLM can run
-  this same replica topology natively (`--data-parallel-size N`), so the
-  pattern carries forward to Stage 2 unchanged.
+  this same replica topology natively (`--data-parallel-size N`), or you can
+  list two vLLM instances in `LLM_BASE_URLS` — the pattern carries forward to
+  Stage 2 unchanged.
+
+Validation status: the routing layer (stickiness, spread, failover, benching,
+single-URL no-op) is **validated live** against two real Ollama replica
+instances; what remains hardware-gated is only the multi-card throughput
+measurement.
 
 ---
 
@@ -332,19 +342,23 @@ open an issue; we will absolutely work through it with you.
 
 ## What this means inside HAL (the actual roadmap)
 
-Stages 0–2 need **no HAL changes** — that's the point of the seam. Items on
-HAL's own list to make multi-backend life nicer, roughly in order:
+Stages 0–2 need **no HAL changes** — that's the point of the seam. What HAL
+has already grown, and what's still on its list:
 
-1. **Backend health fan-out** — `/api/health` and the dashboard currently
-   check one `LLM_BASE_URL`; teach them to enumerate a router's backends.
-2. **Per-device backend routing** — `pinnedModel` already routes per consumer;
-   a natural extension lets a device pin imply a different backend (today
-   LiteLLM covers this externally).
-3. **Measured sizing tables** — replace every "estimate" on this page with
-   numbers from real 2×/4× GPU runs (community hardware reports welcome).
-4. **Broker awareness** — the experimental [GPU broker](gpu-broker.md)
-   currently assumes one GPU's VRAM ledger; multi-GPU means per-device
-   accounting.
+- ✅ **Consumer-affinity replica routing** (`LLM_BASE_URLS`) — shipped;
+  Stage 1.5 above. Rendezvous hashing by device/user, connection-failure
+  benching + failover, loaded-models aggregation across replicas.
+- **Per-device backend *pinning*** — affinity assigns consumers automatically;
+  a natural extension lets a device row pin an explicit backend the way
+  `pinnedModel` pins a model (today LiteLLM covers heterogeneous-backend
+  setups externally).
+- **Dashboard replica health** — failover already keeps service up; the
+  dashboard should additionally *show* per-replica up/benched state.
+- **Measured sizing tables** — replace every "estimate" on this page with
+  numbers from real 2×/4× GPU runs (community hardware reports welcome).
+- **Broker awareness** — the experimental [GPU broker](gpu-broker.md)
+  currently assumes one GPU's VRAM ledger; multi-GPU means per-device
+  accounting.
 
 ## Validation checklist (when the hardware lands)
 

@@ -66,6 +66,7 @@ Which model fits your card → [docs/models.md](docs/models.md), including how t
 
 **Operations**
 - Single server, boring stack: Node/Express, PostgreSQL, Redis, React
+- Multi-GPU ready: point `LLM_BASE_URLS` at N same-model backends and HAL routes each consumer to a consistent replica, with failover ([docs/scaling.md](docs/scaling.md))
 - Structured pino logging, health endpoint, rate limiting, helmet security headers
 - Automatic DB migrations on start; nightly-backup recipe in the docs
 

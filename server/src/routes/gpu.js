@@ -175,6 +175,7 @@ async function executeOllamaJob(job) {
     tools,
     tool_choice,
     ...rest,
+    affinity: job.deviceId ? `device:${job.deviceId}` : undefined,
   });
 }
 

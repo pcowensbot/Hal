@@ -70,6 +70,7 @@ class OllamaService {
           messages: conversationMessages,
           tools: tools.map(t => t),
           temperature: options.temperature || 0.7,
+          affinity: options.affinity,
         });
 
         const assistantMsg = data.choices?.[0]?.message || {};
@@ -112,6 +113,7 @@ class OllamaService {
         model,
         messages: conversationMessages,
         temperature: options.temperature || 0.7,
+        affinity: options.affinity,
       });
 
       return {
@@ -144,6 +146,7 @@ class OllamaService {
           messages: conversationMessages,
           tools: tools.map(t => t),
           temperature: options.temperature || 0.7,
+          affinity: options.affinity,
         });
 
         const assistantMsg = data.choices?.[0]?.message || {};
@@ -158,6 +161,7 @@ class OllamaService {
             temperature: options.temperature,
             toolsUsed,
             onChunk,
+            affinity: options.affinity,
           });
         }
 
@@ -192,6 +196,7 @@ class OllamaService {
         temperature: options.temperature,
         toolsUsed,
         onChunk,
+        affinity: options.affinity,
       });
     } catch (error) {
       console.error('Chat stream generation error:', error);
@@ -199,11 +204,12 @@ class OllamaService {
     }
   }
 
-  async _streamFinalResponse({ model, messages, temperature, toolsUsed, onChunk }) {
+  async _streamFinalResponse({ model, messages, temperature, toolsUsed, onChunk, affinity }) {
     const { body, model: streamModel } = await llmService.chatCompletionStream({
       model,
       messages,
       temperature: temperature || 0.7,
+      affinity,
     });
 
     // body is a Web ReadableStream (Node 20 native fetch) — read via getReader()
@@ -253,6 +259,7 @@ class OllamaService {
         prompt,
         system: options.systemPrompt,
         temperature: options.temperature || 0.7,
+        affinity: options.affinity,
       });
       return result.content;
     } catch (error) {

@@ -148,7 +148,7 @@ router.post('/chat/completions', async (req, res) => {
   try {
     // --- Non-streaming ---
     if (!stream) {
-      const data = await llmService.chatCompletion({ model, messages, tools, tool_choice, think, ...rest });
+      const data = await llmService.chatCompletion({ model, messages, tools, tool_choice, think, ...rest, affinity: `device:${req.device.id}` });
       const durationMs = Date.now() - startTime;
 
       const assistantContent = data.choices?.[0]?.message?.content || '';
@@ -177,7 +177,7 @@ router.post('/chat/completions', async (req, res) => {
 
     // --- Streaming ---
     const { body: upstreamBody, isNativeOllama, model: resolvedModel } = await llmService.chatCompletionStream({
-      model, messages, tools, tool_choice, think, ...rest,
+      model, messages, tools, tool_choice, think, ...rest, affinity: `device:${req.device.id}`,
     });
 
     res.setHeader('Content-Type', 'text/event-stream');

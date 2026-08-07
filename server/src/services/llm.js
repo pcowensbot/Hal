@@ -11,6 +11,17 @@ import prisma from '../config/database.js';
 
 const LLM_PROVIDER = process.env.LLM_PROVIDER || 'ollama';
 const LLM_BASE_URL = process.env.LLM_BASE_URL || process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+// Replica pool for data-parallel serving (docs/scaling.md, Stage 1.5) —
+// comma-separated backends all serving the same model(s). When set, requests
+// are routed by consumer affinity; when unset, behavior is identical to a
+// single LLM_BASE_URL.
+const LLM_BASE_URLS = (process.env.LLM_BASE_URLS || '')
+  .split(',')
+  .map(s => s.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+// How long a replica sits benched after a connection-level failure before
+// its consumers are routed back to it.
+const BACKEND_COOLDOWN_MS = parseInt(process.env.LLM_BACKEND_COOLDOWN_MS) || 30_000;
 const LLM_API_KEY = process.env.LLM_API_KEY || ''; // For vLLM/LiteLLM auth
 const FALLBACK_MODEL = process.env.LLM_DEFAULT_MODEL || process.env.OLLAMA_MODEL || 'qwen3.5:27b-q4_K_M';
 const DEFAULT_CTX = parseInt(process.env.LLM_CONTEXT_LENGTH) || 32768;
@@ -21,8 +32,10 @@ const FETCH_TIMEOUT_MS = parseInt(process.env.LLM_FETCH_TIMEOUT_MS) || 180_000;
 class LLMService {
   constructor() {
     this.provider = LLM_PROVIDER;
-    this.baseUrl = LLM_BASE_URL;
+    this.baseUrls = LLM_BASE_URLS.length ? LLM_BASE_URLS : [LLM_BASE_URL.replace(/\/+$/, '')];
+    this.baseUrl = this.baseUrls[0]; // kept for single-backend callers/introspection
     this.apiKey = LLM_API_KEY;
+    this._backendDownUntil = new Map(); // url → epoch ms until which it's benched
   }
 
   // -------------------------------------------------------------------------
@@ -43,17 +56,20 @@ class LLMService {
    */
   async listModels() {
     try {
-      const url = this.provider === 'ollama'
-        ? `${this.baseUrl}/api/tags`
-        : `${this.baseUrl}/v1/models`;
+      // Replicas serve the same models — first reachable backend answers.
+      const data = await this._withBackend('system', async (baseUrl) => {
+        const url = this.provider === 'ollama'
+          ? `${baseUrl}/api/tags`
+          : `${baseUrl}/v1/models`;
 
-      const response = await fetch(url, {
-        headers: this._headers(),
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        const response = await fetch(url, {
+          headers: this._headers(),
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        });
+        if (!response.ok) throw new Error(`Model list failed: ${response.status}`);
+
+        return response.json();
       });
-      if (!response.ok) throw new Error(`Model list failed: ${response.status}`);
-
-      const data = await response.json();
 
       if (this.provider === 'ollama') {
         return (data.models || []).map(m => ({
@@ -77,21 +93,27 @@ class LLMService {
    */
   async getLoadedModels() {
     if (this.provider !== 'ollama') return [];
-    try {
-      const res = await fetch(`${this.baseUrl}/api/ps`, {
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-      if (!res.ok) return [];
-      const data = await res.json();
-      return (data.models || []).map(m => ({
-        name: m.name,
-        size: m.size,
-        sizeVram: m.size_vram,
-        expiresAt: m.expires_at,
-      }));
-    } catch {
-      return [];
-    }
+    // Aggregate across all replicas — each holds its own resident copy, and
+    // the dashboard should reflect that. Unreachable replicas contribute [].
+    const perBackend = await Promise.all(this.baseUrls.map(async (baseUrl) => {
+      try {
+        const res = await fetch(`${baseUrl}/api/ps`, {
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return (data.models || []).map(m => ({
+          name: m.name,
+          size: m.size,
+          sizeVram: m.size_vram,
+          expiresAt: m.expires_at,
+          ...(this.baseUrls.length > 1 ? { backend: baseUrl } : {}),
+        }));
+      } catch {
+        return [];
+      }
+    }));
+    return perBackend.flat();
   }
 
   // -------------------------------------------------------------------------
@@ -102,12 +124,12 @@ class LLMService {
    * Non-streaming chat completion.
    * Returns OpenAI-format response regardless of provider.
    */
-  async chatCompletion({ model, messages, tools, tool_choice, temperature, think, ...rest }) {
+  async chatCompletion({ model, messages, tools, tool_choice, temperature, think, affinity, ...rest }) {
     if (!model) model = await this.getDefaultModel();
 
     // If think is set and we're on Ollama, use native API for extended thinking
     if (think !== undefined && this.provider === 'ollama') {
-      return this._ollamaNativeChat({ model, messages, tools, tool_choice, temperature, think, ...rest });
+      return this._ollamaNativeChat({ model, messages, tools, tool_choice, temperature, think, ...rest }, affinity);
     }
 
     const body = {
@@ -129,20 +151,22 @@ class LLMService {
       if (!body.max_tokens) body.max_tokens = 4096;
     }
 
-    const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: this._headers(),
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    return this._withBackend(affinity, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: this._headers(),
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => response.statusText);
+        console.error(`LLM chat error (${response.status}):`, errText);
+        throw new LLMError('LLM backend returned an error', response.status);
+      }
+
+      return response.json();
     });
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => response.statusText);
-      console.error(`LLM chat error (${response.status}):`, errText);
-      throw new LLMError('LLM backend returned an error', response.status);
-    }
-
-    return response.json();
   }
 
   /**
@@ -150,7 +174,7 @@ class LLMService {
    * Returns the raw response for piping SSE to the client.
    * Handles Ollama native API when think is set.
    */
-  async chatCompletionStream({ model, messages, tools, tool_choice, temperature, think, ...rest }) {
+  async chatCompletionStream({ model, messages, tools, tool_choice, temperature, think, affinity, ...rest }) {
     if (!model) model = await this.getDefaultModel();
 
     const useNativeApi = think !== undefined && this.provider === 'ollama';
@@ -179,67 +203,75 @@ class LLMService {
       if (!body.max_tokens) body.max_tokens = 4096;
     }
 
-    const endpoint = useNativeApi
-      ? `${this.baseUrl}/api/chat`
-      : `${this.baseUrl}/v1/chat/completions`;
+    // Failover applies only up to the first byte — fetch resolves at response
+    // headers, so a replica that dies mid-stream can't be retried (the client
+    // already saw partial output). Connection-refused/timeout before headers
+    // fails over cleanly.
+    return this._withBackend(affinity, async (baseUrl) => {
+      const endpoint = useNativeApi
+        ? `${baseUrl}/api/chat`
+        : `${baseUrl}/v1/chat/completions`;
 
-    // For streams we only want to bound the initial-response wait — once the
-    // backend starts emitting chunks, an ongoing generation shouldn't be cut
-    // off by the 180s ceiling. Clear the timer after the fetch resolves.
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    let response;
-    try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        headers: this._headers(),
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+      // For streams we only want to bound the initial-response wait — once the
+      // backend starts emitting chunks, an ongoing generation shouldn't be cut
+      // off by the 180s ceiling. Clear the timer after the fetch resolves.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      let response;
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: this._headers(),
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => response.statusText);
-      console.error(`LLM stream error (${response.status}):`, errText);
-      throw new LLMError('LLM backend returned an error', response.status);
-    }
+      if (!response.ok) {
+        const errText = await response.text().catch(() => response.statusText);
+        console.error(`LLM stream error (${response.status}):`, errText);
+        throw new LLMError('LLM backend returned an error', response.status);
+      }
 
-    return {
-      body: response.body,
-      isNativeOllama: useNativeApi,
-      model,
-    };
+      return {
+        body: response.body,
+        isNativeOllama: useNativeApi,
+        model,
+      };
+    });
   }
 
   // -------------------------------------------------------------------------
   // Simple generation (non-chat, Ollama-only — falls back to chat for others)
   // -------------------------------------------------------------------------
 
-  async generate({ model, prompt, system, temperature }) {
+  async generate({ model, prompt, system, temperature, affinity }) {
     if (!model) model = await this.getDefaultModel();
 
     if (this.provider === 'ollama') {
-      const response = await fetch(`${this.baseUrl}/api/generate`, {
-        method: 'POST',
-        headers: this._headers(),
-        body: JSON.stringify({
-          model,
-          prompt,
-          system: system || null,
-          stream: false,
-          options: { temperature: temperature || 0.7, num_ctx: DEFAULT_CTX },
-        }),
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      const data = await this._withBackend(affinity, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/generate`, {
+          method: 'POST',
+          headers: this._headers(),
+          body: JSON.stringify({
+            model,
+            prompt,
+            system: system || null,
+            stream: false,
+            options: { temperature: temperature || 0.7, num_ctx: DEFAULT_CTX },
+          }),
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        });
+
+        if (!response.ok) {
+          console.error(`LLM generate error: ${response.status}`);
+          throw new LLMError('LLM backend returned an error', response.status);
+        }
+
+        return response.json();
       });
-
-      if (!response.ok) {
-        console.error(`LLM generate error: ${response.status}`);
-        throw new LLMError('LLM backend returned an error', response.status);
-      }
-
-      const data = await response.json();
       return {
         content: data.response,
         model: data.model,
@@ -253,7 +285,7 @@ class LLMService {
     if (system) messages.push({ role: 'system', content: system });
     messages.push({ role: 'user', content: prompt });
 
-    const result = await this.chatCompletion({ model, messages, temperature });
+    const result = await this.chatCompletion({ model, messages, temperature, affinity });
     return {
       content: result.choices?.[0]?.message?.content || '',
       model: result.model,
@@ -272,6 +304,75 @@ class LLMService {
     } catch {
       return false;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Backend routing — consumer affinity across replica backends
+  // -------------------------------------------------------------------------
+  //
+  // With LLM_BASE_URLS set to N replicas serving the same model, each request
+  // routes by its affinity key (device on /v1 and /api/llm, user on chat) via
+  // rendezvous hashing: the same consumer always lands on the same replica —
+  // keeping that replica's prompt cache hot — while consumers as a whole
+  // spread evenly. A replica that fails at the connection level is benched
+  // for BACKEND_COOLDOWN_MS and the request retries on the next-ranked
+  // replica; only the benched replica's consumers move, everyone else stays
+  // put (the rendezvous property).
+
+  _hash(str) {
+    // FNV-1a 32-bit — stable, dependency-free, plenty for ranking a few URLs
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+  }
+
+  /** All backends, ranked for this affinity key (highest-random-weight). */
+  _backendOrder(affinity) {
+    if (this.baseUrls.length === 1) return [...this.baseUrls];
+    const key = affinity || 'default';
+    return this.baseUrls
+      .map(url => ({ url, score: this._hash(`${key}|${url}`) }))
+      .sort((a, b) => b.score - a.score)
+      .map(e => e.url);
+  }
+
+  _isBackendUp(url) {
+    return (this._backendDownUntil.get(url) || 0) <= Date.now();
+  }
+
+  _markBackendDown(url) {
+    if (this.baseUrls.length === 1) return;
+    this._backendDownUntil.set(url, Date.now() + BACKEND_COOLDOWN_MS);
+    console.error(`LLM backend benched for ${BACKEND_COOLDOWN_MS}ms after connection failure: ${url}`);
+  }
+
+  /**
+   * Run request(baseUrl) against the affinity-preferred backend, failing over
+   * to the next replica on connection-level errors only (refused, DNS,
+   * timeout). HTTP error responses surface as LLMError and do NOT fail over —
+   * a 404 model or 400 payload would fail identically on every replica.
+   */
+  async _withBackend(affinity, request) {
+    const ranked = this._backendOrder(affinity);
+    const up = ranked.filter(u => this._isBackendUp(u));
+    const order = up.length ? up : ranked; // everything benched → try anyway
+    let lastError;
+    for (const url of order) {
+      try {
+        return await request(url);
+      } catch (error) {
+        if (error instanceof LLMError) throw error;
+        this._markBackendDown(url);
+        lastError = error;
+      }
+    }
+    throw new LLMError(
+      `All LLM backends unreachable (last error: ${lastError?.message || 'unknown'})`,
+      503,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -313,7 +414,7 @@ class LLMService {
    * Ollama native /api/chat for think parameter support.
    * Converts response to OpenAI format.
    */
-  async _ollamaNativeChat({ model, messages, tools, tool_choice, temperature, think, ...rest }) {
+  async _ollamaNativeChat({ model, messages, tools, tool_choice, temperature, think, ...rest }, affinity) {
     const body = {
       model,
       messages: this._normalizeMessagesForOllamaNative(messages),
@@ -325,19 +426,21 @@ class LLMService {
     if (tools) body.tools = tools;
     if (tool_choice) body.tool_choice = tool_choice;
 
-    const response = await fetch(`${this.baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: this._headers(),
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    const data = await this._withBackend(affinity, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: this._headers(),
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+
+      if (!response.ok) {
+        console.error(`Ollama native chat error: ${response.status}`);
+        throw new LLMError('LLM backend returned an error', response.status);
+      }
+
+      return response.json();
     });
-
-    if (!response.ok) {
-      console.error(`Ollama native chat error: ${response.status}`);
-      throw new LLMError('LLM backend returned an error', response.status);
-    }
-
-    const data = await response.json();
     return this._ollamaToOpenAI(data, model);
   }
 

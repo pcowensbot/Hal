@@ -424,7 +424,9 @@ router.post('/conversations/:id/messages', async (req, res) => {
     ];
 
     // Get AI response (with tool calling support)
-    const aiResponse = await ollamaService.generateResponse(messageHistory);
+    const aiResponse = await ollamaService.generateResponse(messageHistory, null, {
+      affinity: `user:${req.user.id}`,
+    });
 
     // If web search was used, prepend a subtle indicator
     let responseContent = aiResponse.content;
@@ -588,7 +590,7 @@ router.post('/conversations/:id/messages/stream', async (req, res) => {
     const aiResponse = await ollamaService.generateResponseStream(
       messageHistory,
       null,
-      {},
+      { affinity: `user:${req.user.id}` },
       (delta) => {
         if (clientClosed) return;
         send('chunk', { delta });

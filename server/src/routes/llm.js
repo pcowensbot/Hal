@@ -58,7 +58,7 @@ router.post('/chat', async (req, res) => {
     messages.push({ role: 'user', content: message.trim() });
 
     // Call LLM via provider abstraction
-    const data = await llmService.chatCompletion({ model, messages });
+    const data = await llmService.chatCompletion({ model, messages, affinity: `device:${req.device.id}` });
     const durationMs = Date.now() - startTime;
 
     const assistantContent = data.choices?.[0]?.message?.content || '';
@@ -146,7 +146,7 @@ router.post('/generate', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    const result = await llmService.generate({ model, prompt: prompt.trim(), system });
+    const result = await llmService.generate({ model, prompt: prompt.trim(), system, affinity: `device:${req.device.id}` });
     const durationMs = Date.now() - startTime;
 
     await logApiRequest(req.device, {
