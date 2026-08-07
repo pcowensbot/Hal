@@ -378,6 +378,9 @@ report ideally includes:
 ---
 
 *TL;DR — one GPU + Ollama serves a household; tuned, it serves a small team.
-The moment "simultaneous" is the operative word, put vLLM behind
-`LLM_BASE_URL` on 2–4 NVLinked GPUs — A100 SXM4 40 GB if buying, V100 SXM2
-if you already own them — and HAL rides along without a code change.*
+Got a second card and a model that fits on one? List both replicas in
+`LLM_BASE_URLS` and HAL load-balances them itself, with per-consumer affinity
+and failover — shipped and validated. The moment "simultaneous" truly is the
+operative word, put vLLM behind the same seam on 2–4 NVLinked GPUs — A100
+SXM4 40 GB if buying, V100 SXM2 if you already own them — and HAL rides along
+without a code change.*
