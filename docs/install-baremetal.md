@@ -48,7 +48,7 @@ nvidia-smi   # expect a table showing your GPU
 
 Ollama bundles its own CUDA runtime — no separate CUDA toolkit needed.
 
-> **Pre-Turing GPUs** (Pascal / Volta: GTX 10-series, Tesla P100/V100, Titan V, Quadro GV100): stock Ollama ≥0.30 dropped support for these cards. **For Volta (sm_70) HAL includes a prebuilt binary** — the installer sets it up automatically (V100 fully vetted; other Volta cards should work, open an issue if not). Pascal still needs a source build. See *Older GPUs* in [models.md](models.md).
+> **Pre-Turing GPUs** (Pascal / Volta: GTX 10-series, Tesla P100/V100, Titan V, Quadro GV100): stock Ollama supports them through its CUDA 12 runner (V100 verified; Pascal unverified). Stay on the 580 driver branch; the installer picks it. Our older Volta build is now opt-in (`HAL_VOLTA_TARBALL`). See *Older GPUs* in [models.md](models.md). Earlier versions of this page said stock Ollama dropped these cards; that was wrong.
 
 ## 3. PostgreSQL
 
@@ -329,7 +329,7 @@ HAL finds it automatically at `<repo>/.venv/docling`; override with `DOCLING_PYT
 | Boot error mentioning JWT_SECRET | Unset or < 32 chars | `openssl rand -hex 32` → `.env`, restart |
 | `prisma migrate deploy` fails: "relation does not exist" | Ran `db push` against an empty DB | `migrate deploy` is the only supported path |
 | "Invalid invite code" at signup | Typo or already used (codes are single-use) | Re-run `node scripts/bootstrap-invite.js` |
-| `nvidia-smi` works but Ollama runs on CPU | Daemon started before driver, or pre-Turing GPU | `sudo systemctl restart ollama`; check `journalctl -u ollama`; see [models.md](models.md) *Older GPUs* |
+| `nvidia-smi` works but Ollama runs on CPU | Daemon started before driver, or driver branch ≥590 on a pre-Turing GPU | `sudo systemctl restart ollama`; check `journalctl -u ollama`; see [models.md](models.md) *Older GPUs* |
 | Rate limits hitting legit users behind a proxy | Proxy not sending `X-Forwarded-For` | Fix the proxy config |
 | `pm2 list` shows `errored` | Env / DB / Redis | `pm2 logs hal --err --lines 100` |
 | Chat never streams | LLM backend unreachable | `curl http://localhost:11434/api/tags`; `systemctl status ollama` |

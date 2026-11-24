@@ -37,7 +37,9 @@ Full walkthroughs (including doing every step by hand): [docs/install-docker.md]
 
 Which model fits your card → [docs/models.md](docs/models.md), including how to pull more models for HAL to use. Running HAL in a Proxmox VM → [docs/proxmox-gpu-passthrough.md](docs/proxmox-gpu-passthrough.md).
 
-> **Older (pre-Turing) GPUs:** stock Ollama ≥0.30 dropped Pascal and Volta cards. **For the Volta family (sm_70 — Tesla V100, Titan V, Quadro GV100) we include a prebuilt binary** ([Releases](https://github.com/pcowensbot/Hal/releases)) and the bare-metal installer sets it up automatically. The V100 is fully vetted — it's what the reference deployment runs in production. Other Volta models should work; if yours doesn't, open an issue and we'll work through it. Pascal (GTX 10-series, P100) currently still means a source build — see *Older GPUs* in [docs/models.md](docs/models.md).
+> **Older (pre-Turing) GPUs:** stock Ollama works on Volta (sm_70 — Tesla V100, Titan V, Quadro GV100) through its CUDA 12 runner (verified with stock 0.40.4 on a Tesla V100). Stock also ships Pascal (sm_60/61) kernels, unverified by us. Stay on the 580 driver branch, the last one for these cards. See *Older GPUs* in [docs/models.md](docs/models.md).
+>
+> *Earlier versions of this README said stock Ollama dropped these cards. That was wrong; details in the Volta section below.*
 
 ---
 
@@ -114,11 +116,18 @@ Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Just here for the Volta Ollama binary?
 
-Welcome — no HAL required. Stock Ollama ≥0.30 dropped Volta (sm_70) when CUDA 13
-removed sm_70 compilation, but the build system still supports it. We maintain a
-prebuilt Ollama for V100-class cards because we run one in production.
+**You probably don't need it.** Stock Ollama runs on Volta: its CUDA 12 runner
+carries sm_70 kernels, and on a V100 `journalctl -u ollama | grep "inference compute"`
+shows `compute=7.0` with `cuda_v12`. Use the normal ollama.com install and stay
+on the 580 driver branch.
 
-**Grab the binary:** [Releases](https://github.com/pcowensbot/Hal/releases) →
+**Correction (2026-11-24):** earlier versions of this project said stock Ollama ≥0.30 dropped Pascal and Volta. That was wrong, and we never actually tested it. Stock Ollama's CUDA 12 runner (`lib/ollama/cuda_v12`) ships sm_60/61/70 kernels (checked in 0.32.4 and 0.40.4), and stock 0.40.4 runs on a Tesla V100 at compute 7.0, 100% GPU. Only its CUDA 13 runner skips these cards, and Ollama falls back to the CUDA 12 runner on its own. Thanks to the [volta-forever](https://github.com/nbald/volta-forever) project for catching it.
+
+We keep our own build around as an optional, older alternative (we run a tuned
+source build in production), and the recipe below still works if you want to
+build Ollama yourself for sm_70.
+
+**Grab the binary (optional):** [Releases](https://github.com/pcowensbot/Hal/releases) →
 `ollama-0.32.4-volta-linux-amd64-sm70.tgz` (sha256 in the release notes).
 Drop-in over an existing Ollama install:
 
@@ -136,9 +145,9 @@ variants should work identically — if yours doesn't, open an issue and we'll
 work through it. Built on Ubuntu 22.04 for glibc portability; runs on
 22.04/24.04/26.04.
 
-⚠️ **Never run the ollama.com installer over this build** — it silently restores
-a stock binary and GPU inference dies with no obvious error. Back up
-`/usr/local/bin/ollama` and `/usr/local/lib/ollama` before any change.
+Running the ollama.com installer over this build replaces it with stock Ollama,
+which also works on Volta. Back up `/usr/local/bin/ollama` and
+`/usr/local/lib/ollama` first if you want to be able to switch back.
 
 **Want to replicate the build?** The recipe, for the trust-nobody crowd:
 

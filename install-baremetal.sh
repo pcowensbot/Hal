@@ -27,21 +27,16 @@ sudo apt-get update -qq
 sudo apt-get install -y -qq curl git build-essential ca-certificates openssl lsb-release
 
 # --- 2. NVIDIA driver (optional) --------------------------------------------
-GPU=0; VRAM_MB=0; PRETURING=0
+GPU=0; VRAM_MB=0
 if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
   GPU=1
   VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | sort -n | tail -1)
   log "NVIDIA GPU ready (${VRAM_MB} MiB VRAM)"
   CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | sort -n | head -1 || echo "")
   if [ -n "$CAP" ] && awk "BEGIN{exit !($CAP < 7.5)}"; then
-    PRETURING=1
-    warn "GPU compute capability $CAP is pre-Turing — stock Ollama ≥0.30 will NOT use it."
-    if [ "$CAP" = "7.0" ]; then
-      warn "Volta card detected — the installer will fetch this project's prebuilt sm_70"
-      warn "Ollama (verified on Tesla V100; other Volta cards should work — file an issue if not)."
-    else
-      warn "Pascal needs a source-built Ollama — see docs/models.md (Older GPUs)."
-    fi
+    # Stock Ollama's CUDA 12 runner ships sm_60/61/70 kernels (V100 verified);
+    # what breaks these cards is a driver branch >= 590.
+    log "Pre-Turing GPU (compute $CAP): stock Ollama uses its CUDA 12 runner; keep the 580 driver branch."
   fi
 elif lspci 2>/dev/null | grep -qi nvidia; then
   if command -v nvidia-smi >/dev/null 2>&1; then
@@ -127,13 +122,12 @@ if ! command -v ollama >/dev/null 2>&1; then
 fi
 sudo systemctl enable --now ollama 2>/dev/null || true
 
-# Volta (sm_70) cards: overlay the project's prebuilt CUDA build — stock
-# Ollama ≥0.30 has no kernels for them. Verified on Tesla V100; other Volta
-# cards should work (open an issue if yours doesn't).
-VOLTA_URL="https://github.com/pcowensbot/Hal/releases/download/volta-ollama-0.32.4/ollama-0.32.4-volta-linux-amd64-sm70.tgz"
-if [ "${CAP:-}" = "7.0" ] && ! ollama --version 2>/dev/null | grep -qi volta; then
-  log "Volta GPU: installing the prebuilt sm_70 Ollama build..."
-  VOLTA_SRC="${HAL_VOLTA_TARBALL:-$VOLTA_URL}"
+# Optional: overlay a custom Ollama build (e.g. this project's older sm_70
+# build from Releases) by pointing HAL_VOLTA_TARBALL at a tarball path or URL.
+# Not needed for Volta: stock Ollama's CUDA 12 runner already supports sm_70.
+if [ -n "${HAL_VOLTA_TARBALL:-}" ] && ! ollama --version 2>/dev/null | grep -qi volta; then
+  log "Installing the custom Ollama build from HAL_VOLTA_TARBALL..."
+  VOLTA_SRC="$HAL_VOLTA_TARBALL"
   if [ -f "$VOLTA_SRC" ]; then
     cp "$VOLTA_SRC" /tmp/ollama-volta.tgz
   else
@@ -156,8 +150,7 @@ if [ "${CAP:-}" = "7.0" ] && ! ollama --version 2>/dev/null | grep -qi volta; th
     sudo systemctl start ollama
     log "Ollama now: $(ollama --version 2>/dev/null || echo unknown)"
   else
-    warn "Couldn't fetch the Volta build — continuing with stock Ollama (CPU inference)."
-    warn "Get it later from the GitHub Releases page and re-run this script."
+    warn "Couldn't fetch the custom build — continuing with stock Ollama."
   fi
 fi
 
@@ -180,13 +173,6 @@ elif [ "$VRAM_MB" -ge 7000  ]; then MODEL="qwen3:8b"
 else                                MODEL="qwen3:4b"
 fi
 [ "$GPU" -eq 1 ] || MODEL="qwen3:4b"
-# Pre-Turing card + stock Ollama = inference silently runs on CPU, where a
-# VRAM-sized model is unusable. Only size to VRAM if a Volta build is present.
-if [ "$PRETURING" -eq 1 ] && ! ollama --version 2>/dev/null | grep -qi volta; then
-  warn "Stock Ollama can't use this GPU — picking a small CPU-friendly model instead."
-  warn "After installing a Volta build (docs/models.md), re-run with HAL_MODEL=$MODEL"
-  MODEL="qwen3:4b"
-fi
 MODEL="${HAL_MODEL:-$MODEL}"
 
 if ! ollama list 2>/dev/null | grep -q "^${MODEL}"; then

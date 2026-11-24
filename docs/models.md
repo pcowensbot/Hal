@@ -165,10 +165,13 @@ tag doesn't specify a quant, Ollama's default is usually q4_K_M-class anyway.
 
 ## Older GPUs (Pascal / Volta): read this before upgrading Ollama
 
-Stock Ollama ≥ 0.30 **dropped support for pre-Turing GPUs** — Pascal (sm_60:
-GTX 10-series, Tesla P100) and Volta (sm_70: Tesla V100 in all variants, Titan V,
-Quadro GV100). These cards still run modern models perfectly well; upstream just
-stopped shipping kernels for them.
+**Stock Ollama supports these cards.** Its CUDA 12 runner ships kernels for
+Pascal (sm_60/61: GTX 10-series, Tesla P40/P100) and Volta (sm_70: Tesla V100
+in all variants, Titan V, Quadro GV100). Only its CUDA 13 runner skips them, and
+Ollama falls back to the CUDA 12 runner automatically. Verified on a Tesla V100
+(stock 0.40.4: `compute=7.0`, `cuda_v12`, 100% GPU); Pascal is unverified by us.
+
+**Correction (2026-11-24):** earlier versions of this project said stock Ollama ≥0.30 dropped Pascal and Volta. That was wrong, and we never actually tested it. Stock Ollama's CUDA 12 runner (`lib/ollama/cuda_v12`) ships sm_60/61/70 kernels (checked in 0.32.4 and 0.40.4), and stock 0.40.4 runs on a Tesla V100 at compute 7.0, 100% GPU. Only its CUDA 13 runner skips these cards, and Ollama falls back to the CUDA 12 runner on its own. Thanks to the [volta-forever](https://github.com/nbald/volta-forever) project for catching it.
 
 If you have one of these cards:
 
@@ -181,12 +184,12 @@ If you have one of these cards:
   branch that claims the card; if installing manually, pin it:
   `sudo apt install nvidia-driver-580-server`.
 
-### Volta (sm_70): we include the binary
+### Volta (sm_70): optional prebuilt binary
 
-**HAL ships a prebuilt Volta Ollama** on the
-[Releases page](https://github.com/pcowensbot/Hal/releases) — CUDA kernels for
-compute capability 7.0, currently `ollama-0.32.4-volta`. The bare-metal
-installer detects a Volta card and installs it automatically. Manual install:
+Not needed (see above), but still available: an older source build on the
+[Releases page](https://github.com/pcowensbot/Hal/releases),
+`ollama-0.32.4-volta`. The installers no longer install it automatically; set
+`HAL_VOLTA_TARBALL` to opt in. Manual install:
 
 ```bash
 sudo systemctl stop ollama
@@ -202,16 +205,14 @@ we'll work through it. The tarball is built on Ubuntu 22.04 for glibc
 portability and runs on 22.04/24.04/26.04. A 32 GB V100 remains a genuinely great HAL card: it runs
 `qwen3.6:27b` at 64K context with room to spare.
 
-**Pascal (sm_60)** has no prebuilt binary yet — you must **build Ollama from
-source** with the CUDA architecture flags for your card. If there's demand,
-sm_60 builds may follow — open an issue and say so.
+**Pascal (sm_60/61)**: stock Ollama ships kernels for it; we have no Pascal
+card to verify on. If it doesn't use your GPU, open an issue with the
+`inference compute` / `skipping CUDA device` lines from `OLLAMA_DEBUG=1 ollama serve`.
 
 Care and feeding of a custom build:
 
-- **Never upgrade via the ollama.com installer.** It will silently replace the
-  Volta build with a stock binary, and GPU inference breaks with no obvious
-  error — inference just quietly falls back to CPU or fails to load. Upgrades
-  mean installing the next Volta build from Releases (or rebuilding from source).
+- **The ollama.com installer replaces a custom build with stock Ollama**, which
+  also runs on these cards. Upgrade either way: stock, or the next custom build.
 - Keep a backup of your known-good binary and library payload
   (`/usr/local/bin/ollama`, `/usr/local/lib/ollama`) before any change so you
   can roll back.

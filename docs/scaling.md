@@ -321,11 +321,13 @@ the topology vLLM was built for. The honest caveats — same story as our
 [Volta Ollama builds](models.md#older-gpus-pascal--volta-read-this-before-upgrading-ollama),
 one layer up the stack:
 
-- **Modern vLLM dropped Volta** just like stock Ollama ≥0.30 did (its current
-  engine assumes sm_80+ attention kernels). Running this path means **pinning
-  an older vLLM release that still ships sm_70 support** — trailing features,
-  not trailing correctness. Community sm_70 builds of newer stacks are the
-  same game we already play with Ollama.
+- **Modern vLLM dropped Volta** (its current engine assumes sm_80+ attention
+  kernels). Running this path means **pinning an older vLLM release that still
+  ships sm_70 support** — trailing features, not trailing correctness — or a
+  CUDA 13 compatibility layer such as
+  [volta-forever](https://github.com/nbald/volta-forever), which reports current
+  vLLM running on a V100 (untested by us). Stock Ollama did *not* drop Volta,
+  despite what this page used to say.
 - **No bf16 on Volta, and modern 4-bit kernels increasingly assume sm_75+** —
   plan around **FP16 weights**, which is why the sizing row above runs a 27B
   at ~55 GB instead of ~17 GB. With 128 GB total, that still leaves a wide KV

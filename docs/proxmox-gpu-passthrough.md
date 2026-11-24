@@ -348,14 +348,12 @@ the safe bet: no display outputs, no audio function, no consumer lockouts, and
 
 ## 10. Pre-Turing cards (Pascal / Volta) — read this
 
-**Stock Ollama 0.30 and later dropped support for pre-Turing GPUs**, including
-Pascal (sm_60 — GTX 10-series, P40, P100) and Volta (sm_70 — Tesla V100, Titan V,
-Quadro GV100; only the V100 is verified by this project).
+**Stock Ollama supports Pascal (sm_60/61) and Volta (sm_70)** through its CUDA 12
+runner; only the Tesla V100 is verified by this project (stock 0.40.4, through
+Proxmox passthrough). What matters for these cards is the driver: stay on the
+**580 branch**, the last one that supports them.
 
-The failure mode is nasty because nothing looks broken: passthrough is fine,
-`nvidia-smi` is healthy, the model loads — and inference quietly runs on the
-CPU. If you have one of these cards, you need an Ollama built from source with
-the older compute capabilities enabled, and you must **never upgrade via the
-ollama.com installer**, which silently replaces your build with a stock binary.
+If inference still runs on the CPU, check `journalctl -u ollama | grep "inference compute"`
+(expect `library=CUDA compute=7.0` on a V100) and see [models.md](models.md).
 
-See [models.md](models.md) for the build recipe and known-good model builds.
+**Correction (2026-11-24):** earlier versions of this project said stock Ollama ≥0.30 dropped Pascal and Volta. That was wrong, and we never actually tested it. Stock Ollama's CUDA 12 runner (`lib/ollama/cuda_v12`) ships sm_60/61/70 kernels (checked in 0.32.4 and 0.40.4), and stock 0.40.4 runs on a Tesla V100 at compute 7.0, 100% GPU. Only its CUDA 13 runner skips these cards, and Ollama falls back to the CUDA 12 runner on its own. Thanks to the [volta-forever](https://github.com/nbald/volta-forever) project for catching it.
